@@ -64,7 +64,7 @@
 ┌──────────────────────────── 中间件数据面 ───────────────────────────────┐
 │  MCP Hub：按 session token 解析租户 → 过滤工具 → 路由调用                  │
 │  Tool Router：权限校验 → HMAC 签名 → 回调客户端 → 超时/重试/幂等           │
-│  Agent Adapter Layer：cli / coze / mock / 未来新增                       │
+│  Agent Adapter Layer：self / cli / coze / 未来新增                       │
 │  Sandbox Pool：每会话独立工作区 + 受限 CLI 容器                            │
 └─────────────────────────────────────────────────────────────────────────┘
             │
@@ -80,30 +80,30 @@
 
 | 模块 | 端口 | 职责 | 关键包 |
 |---|---|---|---|
-| `ClientAgent` | 8080 | 中间件：适配器注册表、会话持有、工具目录、MCP 网关、`(clientId,name)` 隔离 | `agent_adaptor`、`agent_core`、`external`、`mcp` |
-| `AgentBrain` | 8081 | 自研 Agent 服务：只做决策（返回客户端工具调用或最终输出），**无状态、不持有会话** | `api`、`service`、`controller` |
-| `AgentClient` | 8082 | 自研客户端：注册本地工具 → 接收工具回调执行 → 向中间件发起对话 | `client`、`controller` |
+| `AgentAdaptor` | 8080 | 中间件：适配器注册表、会话持有、工具目录、MCP 网关、`(clientId,name)` 隔离 | `agent_adaptor`（含 `impl` 子包）、`core`、`client_tool`、`controller` |
+| `BrainAgent` | 8081 | 自研 Agent 服务：只做决策（返回客户端工具调用或最终输出），**无状态、不持有会话** | `api`、`service`、`controller` |
+| `Client` | 8082 | 自研客户端：注册本地工具 → 接收工具回调执行 → 向中间件发起对话 | `client`、`controller` |
 
 调用闭环：
 
 ```
-AgentClient(8082) --GET /chat--> ClientAgent(8080) --POST /v1/brain/chat--> AgentBrain(8081)
+Client(8082) --GET /chat--> AgentAdaptor(8080) --POST /v1/brain/chat--> BrainAgent(8081)
         ^                              |  (会话、消息历史在此持有)
         |                              v
         +----POST /client/tools/execute----+  (工具由中间件按 clientId 路由回客户端执行)
 ```
 
-`AgentBrain` 只依赖 HTTP 契约，后续可整体替换为 Qwen Code / Claude Code / 扣子；`AgentClient` 只依赖注册与回调协议，可拆成任意语言的独立客户端。
+`BrainAgent` 只依赖 HTTP 契约，后续可整体替换为 Qwen Code / Claude Code / 扣子；`Client` 只依赖注册与回调协议，可拆成任意语言的独立客户端。
 
 ### 3.2 启动方式（本地）
 
 ```bash
 # 1) Agent 服务
-mvn -pl AgentBrain   spring-boot:run     # http://localhost:8081
+mvn -pl BrainAgent   spring-boot:run     # http://localhost:8081
 # 2) 中间件
-mvn -pl ClientAgent  spring-boot:run     # http://localhost:8080
+mvn -pl AgentAdaptor spring-boot:run     # http://localhost:8080
 # 3) 客户端（启动后自动注册工具，中间件未就绪会每 5s 重试）
-mvn -pl AgentClient  spring-boot:run     # http://localhost:8082
+mvn -pl Client       spring-boot:run     # http://localhost:8082
 
 # 端到端验证：客户端 → 中间件 → 自研Agent → 工具回调
 curl "http://localhost:8082/chat?prompt=我叫什么名字"
@@ -121,7 +121,7 @@ curl "http://localhost:8082/chat?prompt=我叫什么名字"
 |---|---|---|
 | `Tenant` | `tenantId`, `name`, `appKey`, `appSecretHash`, `callbackAllowlist`, `allowedAgents`, `quota` | 一个客户端 = 一个租户 |
 | `ClientToolDef` | `tenantId`, `name`, `description`, `inputSchema`, `version`, `enabled` | 工具按租户存储，`(tenantId, name)` 唯一 |
-| `AgentProfile` | `agentId`, `type`(cli/coze/mock/…), `modelConfigRef`, `workspacePolicy` | Agent 能力描述，可被多租户引用 |
+| `AgentProfile` | `agentId`, `type`(cli/coze/self/…), `modelConfigRef`, `workspacePolicy` | Agent 能力描述，可被多租户引用 |
 | `Session` | `sessionId`, `tenantId`, `endUserId`, `agentId`, `agentSessionRef`, `status`, `createdAt` | 中间件持有；`agentSessionRef` 是 Agent 侧会话 ID 映射 |
 | `ToolInvocation` | `requestId`, `sessionId`, `toolName`, `arguments`, `status`, `result`, `latencyMs` | 工具调用审计单元 |
 | `MemoryScope` | `(tenantId, endUserId)` | 记忆/画像的隔离键 |
@@ -161,10 +161,10 @@ curl "http://localhost:8082/chat?prompt=我叫什么名字"
 ### 5.2 工具隔离
 
 - `tools/list` 只返回当前租户注册的工具。
-- 工具名冲突：注册表主键改为 `(tenantId, name)`；对模型展示时可保持原名，由 session 上下文决定解析哪一条。
+- 工具名冲突：注册表主键为 `(tenantId, name)`；对模型展示时可保持原名，由 session 上下文决定解析哪一条。
 - `tools/call` 必须校验：该工具属于当前 session 的租户，否则返回 `isError`。
 
-> 当前实现用一个全局 `Map<String, ToolDefinition>`，两个租户注册同名 `get_name` 会互相覆盖，这是必须优先修的点。
+> 当前实现：`ToolRegistry` 已按 `(clientId, name)` 存储工具，双客户端同名工具互不覆盖；MCP `/mcp/{clientId}` 也只返回当前客户端的工具。后续升级为租户 token 后，`clientId` 从 token 解析而非调用方自报。
 
 ### 5.3 数据隔离
 
@@ -270,7 +270,7 @@ public interface AgentAdaptor {
     default List<String> capabilities() { return List.of("chat"); }
     default boolean available() { return true; }
     default String unavailableReason() { return null; }
-    ChatResult chat(AgentRequest request);
+    AgentResponse chat(AgentRequest request);
 }
 
 public record AgentRequest(String clientId, String userPrompt,
@@ -280,20 +280,20 @@ public record AgentRequest(String clientId, String userPrompt,
 新增 Agent 只需实现该接口并注册为 Bean，`AgentAdaptorRegistry` 按名称选择。
 客户端通过 `GET /agents` 获取 `description / capabilities / available`，接入前即可知道平台上有哪些 Agent、各自能做什么、当前是否可用。
 
-当前内置三个实现：
+当前内置三个实现（放在 `agent_adaptor.impl` 子包下）：
 
 | name | 说明 |
 |---|---|
-| `self` | 自研 Agent 服务，HTTP 调 `AgentBrain` 的 `/v1/brain/chat`，由中间件执行 Agent Loop（默认） |
+| `self` | 自研 Agent 服务，HTTP 调 `BrainAgent` 的 `/v1/brain/chat`，由中间件执行 Agent Loop（默认） |
 | `cli` | 复用 Qwen Code / Claude Code 子进程，经 MCP 发现并调用客户端工具 |
 | `coze` | 扣子低代码智能体，能力在扣子平台配置 |
 
 `self` 适配器在中间件内完成完整 Agent Loop：调用 Agent 得到 `CLIENT_TOOL_CALL` → `ToolRegistry` 回调客户端执行 → 结果回传 Agent → 直到 `FINAL_OUTPUT`，并受 `agent.self.max-steps` 限制。
 
-会话状态不再放在 Brain 或各 Adapter 的私有 Map 里，而是统一由 `AgentSessionStore` 持有：
+会话状态统一由 `AgentSessionStore` 持有，不放在 Brain 或各 Adapter 的私有 Map 里：
 
 - 键：`(adaptor, clientId, sessionId)`，`clientId` 即租户边界；
-- 内容：中间件侧 `BrainSession`（消息历史）+ Agent 侧会话引用（CLI `session_id` / 扣子 `conversationId`）；
+- 内容：中间件侧 `AgentSession`（消息历史 + 客户端共享变量）+ Agent 侧会话引用（CLI `session_id` / 扣子 `conversationId`）；
 - TTL + 定时清理，替换为 Redis/DB 时只需改这一个类。
 
 ### 7.2 CLI Agent 接入（当前主路线）
@@ -332,10 +332,10 @@ qwen -p <prompt> --output-format stream-json \
 | 接口 | 归属 | 说明 |
 |---|---|---|
 | `GET /agents` | 中间件 | Agent 能力发现：返回默认 Agent 及每个 Agent 的描述、能力标签、是否可用 |
-| `GET /chat?prompt=&agent=&clientId=&sessionId=&clientPrompt=` | 中间件 | 客户端发起对话，由独立客户端（AgentClient）调用。不传 `sessionId` 表示新会话，返回 `clientId/agent/sessionId/output` |
-| `POST /v1/brain/chat` | AgentBrain | 自研 Agent 决策接口：入参 `clientId/sessionId/newSession/userPrompt/clientPrompt`，返回 `CLIENT_TOOL_CALL`（含工具名与参数）或 `FINAL_OUTPUT` |
-| `GET /chat?prompt=&agent=&sessionId=` | AgentClient | 自研客户端的对话入口，转发中间件 `/chat` 并原样返回结果 |
-| `POST /client/tools/execute` | AgentClient | 自研客户端实现的工具执行回调，中间件按 `callbackUrl` 调用它 |
+| `GET /chat?prompt=&agent=&clientId=&sessionId=&clientPrompt=` | 中间件 | 客户端发起对话，由独立客户端（`Client` 模块）调用。不传 `sessionId` 表示新会话，返回 `clientId/agent/sessionId/output` |
+| `POST /v1/brain/chat` | BrainAgent | 自研 Agent 决策接口：入参 `clientId/sessionId/newSession/userPrompt/clientPrompt`，返回 `CLIENT_TOOL_CALL`（含工具名与参数）或 `FINAL_OUTPUT` |
+| `GET /chat?prompt=&agent=&sessionId=` | Client | 自研客户端的对话入口，转发中间件 `/chat` 并原样返回结果 |
+| `POST /client/tools/execute` | Client | 自研客户端实现的工具执行回调，中间件按 `callbackUrl` 调用它 |
 | `POST /client-tools/register` | 中间件 | 注册/更新客户端工具：`clientId` + `callbackUrl` + `tools`，参数与回调地址做校验，非法返回 400 |
 | `GET /client-tools?clientId=` | 中间件 | 查询工具；带 `clientId` 只看该客户端的工具，不带返回全量（管理视角） |
 | `GET /client-tools/{clientId}/{name}` | 中间件 | 查询单个工具定义 |
@@ -403,7 +403,7 @@ qwen -p <prompt> --output-format stream-json \
 | 能力 | 现状 | 完成度 | 主要差距 |
 |---|---|---|---|
 | Agent 抽象与可替换 | `AgentAdaptor` + `AgentAdaptorRegistry` + `AgentRequest`，self/coze/cli 三实现，`GET /agents` 能力发现 | **85%** | 缺少统一事件模型、降级路由、AgentProfile 配置化 |
-| 自研 Agent | 独立 `AgentBrain` 服务，HTTP 决策 + 中间件侧 Agent Loop（`SelfAgentAdaptor`） | **60%** | 决策逻辑仍为确定性演示，未接真实模型 |
+| 自研 Agent | 独立 `BrainAgent` 服务，HTTP 决策 + 中间件侧 Agent Loop（`SelfAgentAdaptor`） | **60%** | 决策逻辑仍为确定性演示，未接真实模型 |
 | Agent 复用（CLI） | `CliAgentAdaptor` 子进程 + `AgentSessionStore` 会话映射 + 鉴权参数 + 客户端级 MCP 配置 | **85%** | 无容器沙箱、无并发池、无 token 限额 |
 | 客户端工具协议 | `ClientTool` 接口 + 注册/查询/注销/回调 + `(clientId,name)` 工具目录 | **75%** | 无鉴权、无签名、无版本、无幂等、无审计 |
 | MCP 网关 | `initialize`/`tools/list`/`tools/call` 已跑通，按 clientId 裁剪工具与路由 | **70%** | 无 session token、无调用权限校验 |
@@ -423,15 +423,15 @@ qwen -p <prompt> --output-format stream-json \
 
 | 优先级 | 问题 | 位置 | 影响 |
 |---|---|---|---|
-| P0 | 注册接口与 `/mcp` 无鉴权，`clientId` 仍由调用方自报 | [ToolRegistrationController.java](../ClientAgent/src/main/java/com/agent/demo/clientagent/client_tool/ToolRegistrationController.java) / [McpServerController.java](../ClientAgent/src/main/java/com/agent/demo/clientagent/mcp/McpServerController.java) | 可冒充任意客户端；接入 token 后才能作为真实租户边界 |
-| P0 | `callbackUrl` 未做域名白名单，存在 SSRF 风险 | [ToolRegistry.java](../ClientAgent/src/main/java/com/agent/demo/clientagent/client_tool/ToolRegistry.java) | 可回调内网地址 |
-| P0 | 用户数据放在静态字段 `Client.name` | [Client.java](../AgentClient/src/main/java/com/agent/demo/agentclient/client/Client.java) | 多客户端场景会互相污染（仅演示客户端） |
-| P1 | CLI 在宿主直接运行，可读写宿主目录 | [CliAgentAdaptor.java](../ClientAgent/src/main/java/com/agent/demo/clientagent/agent_adaptor/CliAgentAdaptor.java) | 越权、逃逸；已有独立工作目录但未沙箱 |
-| P1 | 模型 API Key 明文写在 `application.yml` | [application.yml](../ClientAgent/src/main/resources/application.yml) | 泄露风险（仓库公开） |
-| P2 | 会话来内存态，重启即丢 | [AgentSessionStore.java](../ClientAgent/src/main/java/com/agent/demo/clientagent/agent_adaptor/AgentSessionStore.java) | 无法水平扩展/故障恢复 |
+| P0 | 注册接口与 `/mcp` 无鉴权，`clientId` 仍由调用方自报 | [ClientToolController.java](../AgentAdaptor/src/main/java/com/agent/demo/clientagent/controller/ClientToolController.java) / [McpServerController.java](../AgentAdaptor/src/main/java/com/agent/demo/clientagent/controller/McpServerController.java) | 可冒充任意客户端；接入 token 后才能作为真实租户边界 |
+| P0 | `callbackUrl` 未做域名白名单，存在 SSRF 风险 | [ToolRegistry.java](../AgentAdaptor/src/main/java/com/agent/demo/clientagent/client_tool/ToolRegistry.java) | 可回调内网地址 |
+| P0 | 用户数据放在静态字段 `Client.name` | [Client.java](../Client/src/main/java/com/agent/demo/agentclient/client/Client.java) | 多客户端场景会互相污染（仅演示客户端） |
+| P1 | CLI 在宿主直接运行，可读写宿主目录 | [CliAgentAdaptor.java](../AgentAdaptor/src/main/java/com/agent/demo/clientagent/agent_adaptor/impl/CliAgentAdaptor.java) | 越权、逃逸；已有独立工作目录但未沙箱 |
+| P1 | 模型 API Key 明文写在 `application.yml` | [application.yml](../AgentAdaptor/src/main/resources/application.yml) | 泄露风险（仓库公开） |
+| P2 | 会话来内存态，重启即丢 | [AgentSessionStore.java](../AgentAdaptor/src/main/java/com/agent/demo/clientagent/core/AgentSessionStore.java) | 无法水平扩展/故障恢复 |
 | P2 | 工具调用无超时/重试/审计 | Tool Router 缺失 | 生产不可用 |
 
-已完成的历史问题：全局 `Map<name, tool>` 已被 `(clientId, name)` 工具目录替代；`/chat` 已支持 `sessionId` 多轮；`sessionMap` 无上限无过期已由 `AgentSessionStore` + TTL 清理解决。
+已完成的历史问题：全局 `Map<name, tool>` 已被 `(clientId, name)` 工具目录替代；`/chat` 已支持 `sessionId` 多轮；`sessionMap` 无上限无过期已由 `AgentSessionStore` + TTL 清理解决；MockAgent 与进程内 Client 已拆除，`agent_brain` 与 `client` 已拆为独立模块。
 
 ### 12.3 建议的下一步
 
