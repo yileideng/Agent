@@ -1,0 +1,6 @@
+spring:
+  application:
+    name: AgentBrain
+
+server:
+  port: 8081

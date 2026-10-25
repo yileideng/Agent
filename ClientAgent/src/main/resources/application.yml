@@ -3,10 +3,16 @@ spring:
     name: ClientAgent
 
 agent:
-  # 调用接口未传 agent 参数时使用的默认适配器
-  default-adaptor: mock
-  # 默认客户端(租户)：/mcp 未显式指定 clientId 时使用，进程内演示客户端也用它注册
-  default-client-id: in-app-client
+  # 调用接口未传 agent 参数时使用的默认适配器：self(自研Agent服务) / cli / coze
+  default-adaptor: self
+  # 默认客户端(租户)：/chat、/mcp 未显式指定 clientId 时使用
+  default-client-id: agent-client
+  # 自研Agent服务(独立模块 AgentBrain)的HTTP接入配置，中间件通过它做决策请求
+  self:
+    url: http://localhost:8081
+    chat-path: /v1/brain/chat
+    # 单轮对话内允许的客户端工具调用最大轮数
+    max-steps: 5
   # 会话状态由中间件持有，按 (adaptor, clientId, sessionId) 隔离，带TTL清理
   session:
     ttl-minutes: 120

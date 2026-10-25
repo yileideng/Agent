@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.agent.demo</groupId>
+    <artifactId>agent-platform</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>agent-platform</name>
+    <description>客户端Agent中间件平台：中间件 + 自研Agent服务 + 自研客户端</description>
+
+    <modules>
+        <!-- 中间件：Agent适配层 + 客户端工具网关 + MCP -->
+        <module>ClientAgent</module>
+        <!-- 自研Agent服务：负责Agent决策，被中间件通过HTTP适配 -->
+        <module>AgentBrain</module>
+        <!-- 自研客户端：注册工具、执行工具回调、向中间件发起对话 -->
+        <module>AgentClient</module>
+    </modules>
+</project>
