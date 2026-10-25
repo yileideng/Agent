@@ -14,7 +14,7 @@ public class UpdateNameTool implements ClientTool {
 
     @Override
     public String getDescription() {
-        return "UpdateNameTool Description";
+        return "修改当前登录用户的姓名，updated_name 参数为新姓名";
     }
 
     @Override

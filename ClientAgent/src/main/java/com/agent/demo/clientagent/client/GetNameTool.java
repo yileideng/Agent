@@ -14,7 +14,7 @@ public class GetNameTool implements ClientTool {
 
     @Override
     public String getDescription() {
-        return "GetNameTool Description";
+        return "获取当前登录用户的姓名，回答与用户身份相关的问题时调用";
     }
 
     @Override

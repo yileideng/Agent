@@ -1,0 +1,35 @@
+spring:
+  application:
+    name: ClientAgent
+
+agent:
+  # 调用接口未传 agent 参数时使用的默认适配器
+  default-adaptor: mock
+  # 默认客户端(租户)：/mcp 未显式指定 clientId 时使用，进程内演示客户端也用它注册
+  default-client-id: in-app-client
+  # 会话状态由中间件持有，按 (adaptor, clientId, sessionId) 隔离，带TTL清理
+  session:
+    ttl-minutes: 120
+    cleanup-interval-ms: 600000
+  cli:
+    # qwen 需 Node20+，本机默认 node 是16，因此显式指定 shim 与 Node22 目录
+    command: 'D:\nodejs\node_global\qwen.cmd'
+    node-path: 'D:\nvm\v22.14.0'
+    # 非交互鉴权：走阿里云百炼 OpenAI 兼容端点
+    auth-type: openai
+    api-key: sk-7aee717a3e024c4aa6ad8d87087d5d48
+    base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    model: qwen-plus
+    # 外部客户端工具的MCP服务基地址，CLI实际使用 {mcp-url}/{clientId}，只能看到当前客户端的工具
+    mcp-url: http://localhost:8080/mcp
+    mcp-server-name: client-tools
+    # 单次CLI调用超时，超时后强制终止进程
+    timeout-seconds: 180
+    # CLI每会话工作目录根路径，留空则使用系统临时目录下的 client-agent-workspaces
+    work-dir: ''
+
+# 扣子适配器配置（未使用时可留空）
+coze:
+  api-token: ''
+  bot-id: ''
+  base-url: https://api.coze.cn
