@@ -15,7 +15,7 @@ public class Client {
         // 执行客户端工具
         Map<String, String> toolResult = clientToolMap.get(toolName).execute(parameters);
         // 执行结果回调，触发AgentBrain继续执行
-        ChatResult chatResult = agentAdaptor.chat(toolResult.toString(), clientPrompt, sessionId);
+        ChatResult chatResult = agentAdaptor.chat(toolResult.toString(), clientPrompt, sessionId, clientToolMap);
         return null;
     }
 }
