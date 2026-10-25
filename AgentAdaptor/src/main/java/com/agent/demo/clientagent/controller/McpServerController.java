@@ -1,7 +1,7 @@
 package com.agent.demo.clientagent.controller;
 
+import com.agent.demo.clientagent.client_tool.ClientRegistry;
 import com.agent.demo.clientagent.client_tool.ToolDefinition;
-import com.agent.demo.clientagent.client_tool.ToolRegistry;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -32,13 +32,13 @@ public class McpServerController {
 
     private static final String DEFAULT_PROTOCOL_VERSION = "2025-03-26";
 
-    private final ToolRegistry registry;
+    private final ClientRegistry clientRegistry;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final String defaultClientId;
 
-    public McpServerController(ToolRegistry registry,
+    public McpServerController(ClientRegistry clientRegistry,
                                @Value("${agent.default-client-id:in-app-client}") String defaultClientId) {
-        this.registry = registry;
+        this.clientRegistry = clientRegistry;
         this.defaultClientId = defaultClientId;
     }
 
@@ -106,7 +106,7 @@ public class McpServerController {
 
     private ObjectNode toolsListResult(String clientId) {
         ArrayNode tools = objectMapper.createArrayNode();
-        for (ToolDefinition tool : registry.list(clientId)) {
+        for (ToolDefinition tool : clientRegistry.listTools(clientId)) {
             ObjectNode node = tools.addObject();
             node.put("name", tool.name());
             node.put("description", tool.description());
@@ -136,7 +136,7 @@ public class McpServerController {
         ObjectNode result = objectMapper.createObjectNode();
         ArrayNode content = result.putArray("content");
         try {
-            String text = registry.execute(clientId, name, arguments);
+            String text = clientRegistry.execute(clientId, null, null, name, arguments);
             content.addObject().put("type", "text").put("text", text);
             result.put("isError", false);
         } catch (Exception e) {

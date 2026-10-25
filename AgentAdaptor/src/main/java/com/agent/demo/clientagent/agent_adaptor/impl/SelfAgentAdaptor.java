@@ -7,7 +7,7 @@ import com.agent.demo.clientagent.core.AgentSession;
 import com.agent.demo.clientagent.core.AgentResponse;
 import com.agent.demo.clientagent.core.AgentResponseType;
 import com.agent.demo.clientagent.core.Message;
-import com.agent.demo.clientagent.client_tool.ToolRegistry;
+import com.agent.demo.clientagent.client_tool.ClientRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -55,19 +55,19 @@ public class SelfAgentAdaptor implements AgentAdaptor {
     private static final String TYPE_FINAL_OUTPUT = "FINAL_OUTPUT";
 
     private final AgentSessionStore sessionStore;
-    private final ToolRegistry toolRegistry;
+    private final ClientRegistry clientRegistry;
     private final RestClient restClient = RestClient.create();
     private final String baseUrl;
     private final String chatPath;
     private final int maxSteps;
 
     public SelfAgentAdaptor(AgentSessionStore sessionStore,
-                            ToolRegistry toolRegistry,
+                            ClientRegistry clientRegistry,
                             @Value("${agent.self.url:http://localhost:8081}") String baseUrl,
                             @Value("${agent.self.chat-path:/v1/brain/chat}") String chatPath,
                             @Value("${agent.self.max-steps:5}") int maxSteps) {
         this.sessionStore = sessionStore;
-        this.toolRegistry = toolRegistry;
+        this.clientRegistry = clientRegistry;
         this.baseUrl = baseUrl != null && baseUrl.endsWith("/")
                 ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         this.chatPath = chatPath;
@@ -135,8 +135,9 @@ public class SelfAgentAdaptor implements AgentAdaptor {
                     + ",session=" + localSessionId + "] Agent请求调用客户端工具: "
                     + response.toolName() + "，参数: " + response.toolParameters());
             // 工具调用由中间件路由到客户端执行，执行结果再回传给Agent继续决策
-            String toolResult = toolRegistry.execute(
-                    clientId, response.toolName(), toArguments(response.toolParameters()));
+            String toolResult = clientRegistry.execute(
+                    clientId, request.endUserId(), localSessionId,
+                    response.toolName(), toArguments(response.toolParameters()));
             agentSession.addMessage(new Message("tool", toolResult));
             currentInput = toolResult;
         }

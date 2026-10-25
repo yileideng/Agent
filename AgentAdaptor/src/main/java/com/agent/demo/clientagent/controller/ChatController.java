@@ -35,6 +35,7 @@ public class ChatController {
      * - prompt：用户输入（必填）
      * - agent：指定 self / coze / cli，缺省使用 agent.default-adaptor
      * - clientId：发起调用的客户端，缺省使用 agent.default-client-id
+     * - endUserId：终端用户标识（MOBILE 客户端按用户/设备路由工具调用时使用，SERVER 可空）
      * - sessionId：续聊时传上一轮返回的 sessionId，不传表示新会话
      * - clientPrompt：客户端定制的系统提示词
      * 返回：clientId、实际使用的 agent、sessionId（下次续聊传入）、output（Agent最终回答）
@@ -43,11 +44,12 @@ public class ChatController {
     public Map<String, Object> chat(@RequestParam String prompt,
                                     @RequestParam(required = false) String agent,
                                     @RequestParam(required = false) String clientId,
+                                    @RequestParam(required = false) String endUserId,
                                     @RequestParam(required = false) String sessionId,
                                     @RequestParam(required = false) String clientPrompt) {
         String cid = clientId == null || clientId.isBlank() ? defaultClientId : clientId;
         AgentAdaptor adaptor = agentAdaptorRegistry.get(agent);
-        AgentResponse result = adaptor.chat(new AgentRequest(cid, prompt, clientPrompt, sessionId));
+        AgentResponse result = adaptor.chat(new AgentRequest(cid, endUserId, prompt, clientPrompt, sessionId));
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("clientId", cid);

@@ -11,10 +11,10 @@
 
     <modules>
         <!-- 中间件：Agent适配层 + 客户端工具网关 + MCP -->
-        <module>ClientAgent</module>
+        <module>AgentAdaptor</module>
         <!-- 自研Agent服务：负责Agent决策，被中间件通过HTTP适配 -->
-        <module>AgentBrain</module>
+        <module>BrainAgent</module>
         <!-- 自研客户端：注册工具、执行工具回调、向中间件发起对话 -->
-        <module>AgentClient</module>
+        <module>Client</module>
     </modules>
 </project>

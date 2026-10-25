@@ -70,15 +70,18 @@ public class Client {
                         "description", tool.getDescription(),
                         "parameters", tool.getParameters()))
                 .toList();
-        String callbackUrl = callbackBaseUrl + "/client/tools/execute";
         try {
-            // 调用AgentAdaptor的接口，把客户端工具注册到ToolRegistry，再通过McpServerController把可用的客户端工具暴露给Agent
+            // 调用 AgentAdaptor 的 /clients/register 接口，上报客户端类型、回调基地址与工具清单
+            // SERVER 客户端：baseCallbackUrl + defaultCallbackPath 拼接出工具回调地址
             String response = restClient.post()
-                    .uri(middlewareUrl + "/client-tools/register")
+                    .uri(middlewareUrl + "/clients/register")
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(Map.of(
                             "clientId", clientId,
-                            "callbackUrl", callbackUrl,
+                            "clientType", "SERVER",
+                            "baseCallbackUrl", callbackBaseUrl,
+                            "defaultCallbackPath", "/client/tools/execute",
+                            "clientPrompt", clientPrompt == null ? "" : clientPrompt,
                             "tools", tools))
                     .retrieve()
                     .body(String.class);

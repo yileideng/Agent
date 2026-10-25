@@ -1,7 +1,9 @@
 package com.agent.demo.clientagent.controller;
 
+import com.agent.demo.clientagent.client_tool.ClientRegistration;
+import com.agent.demo.clientagent.client_tool.ClientRegistry;
+import com.agent.demo.clientagent.client_tool.ClientType;
 import com.agent.demo.clientagent.client_tool.ToolDefinition;
-import com.agent.demo.clientagent.client_tool.ToolRegistry;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.ResponseEntity;
@@ -22,42 +24,56 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 客户端工具注册入口：进程内的演示客户端和外部真实客户端都走同一个接口。
+ * 客户端注册与工具管理入口：服务端客户端和移动端客户端都走同一套接口。
  * 一个客户端(clientId)拥有自己的工具目录，后续接入鉴权后 clientId 由凭证解析，不再信任请求体自报。
  */
 @RestController
-@RequestMapping("/client-tools")
+@RequestMapping("/clients")
 public class ClientToolController {
 
-    private final ToolRegistry registry;
+    private final ClientRegistry clientRegistry;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public ClientToolController(ToolRegistry registry) {
-        this.registry = registry;
+    public ClientToolController(ClientRegistry clientRegistry) {
+        this.clientRegistry = clientRegistry;
     }
 
     /**
-     * POST /client-tools/register
-     * 客户端把自己的工具清单和回调地址上报给中间件，服务端按 (clientId, name) 建立/覆盖工具目录。
-     * 请求体示例：
+     * POST /clients/register
+     * 客户端把自己的类型、回调基地址、工具清单上报给中间件，服务端按 (clientId, name) 建立/覆盖工具目录。
+     * 请求体示例（SERVER 客户端）：
      * {
      *   "clientId": "xiaohongshu",
-     *   "callbackUrl": "https://client.example.com/tools/execute",
-     *   "tools": [{"name":"get_user_profile","description":"查当前用户资料","parameters":{"user_id":"string"}}]
+     *   "clientType": "SERVER",
+     *   "baseCallbackUrl": "https://client.example.com",
+     *   "defaultCallbackPath": "/client/tools/execute",
+     *   "clientPrompt": "你是小红书的创作助手...",
+     *   "tools": [
+     *     {"name":"get_user_profile","description":"查当前用户资料","parameters":{"user_id":"string"}}
+     *   ]
      * }
-     * 返回：clientId、注册数量 registered、工具名列表 tools；参数非法时返回 400。
+     * MOBILE 客户端不需要 baseCallbackUrl 和 callbackPath。
+     * 返回：clientId、clientType、注册数量 registered、工具名列表 tools；参数非法时返回 400。
      */
     @PostMapping("/register")
     public Map<String, Object> register(@RequestBody String body) throws Exception {
         JsonNode request = objectMapper.readTree(body);
         String clientId = request.path("clientId").asText("").trim();
-        String callbackUrl = request.path("callbackUrl").asText("").trim();
+        String clientTypeStr = request.path("clientType").asText("").trim();
+        String baseCallbackUrl = request.path("baseCallbackUrl").asText(null);
+        String defaultCallbackPath = request.path("defaultCallbackPath").asText(null);
+        String clientPrompt = request.path("clientPrompt").asText(null);
+
         if (clientId.isEmpty()) {
             throw new IllegalArgumentException("clientId不能为空");
         }
-        if (callbackUrl.isEmpty()) {
-            throw new IllegalArgumentException("callbackUrl不能为空");
+        ClientType clientType;
+        try {
+            clientType = ClientType.valueOf(clientTypeStr.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("clientType非法，必须是 SERVER 或 MOBILE: " + clientTypeStr);
         }
+
         JsonNode toolsNode = request.path("tools");
         if (!toolsNode.isArray() || toolsNode.isEmpty()) {
             throw new IllegalArgumentException("tools不能为空");
@@ -68,55 +84,76 @@ public class ClientToolController {
             Map<String, String> parameterMap = new HashMap<>();
             parameters.fields().forEachRemaining(
                     entry -> parameterMap.put(entry.getKey(), entry.getValue().asText("string")));
+            String callbackPath = node.path("callbackPath").asText(null);
             definitions.add(new ToolDefinition(
-                    clientId,
                     node.path("name").asText(""),
                     node.path("description").asText(""),
                     parameterMap,
-                    callbackUrl));
+                    callbackPath));
         }
-        List<ToolDefinition> registered = registry.register(clientId, callbackUrl, definitions);
+        ClientRegistration registered = clientRegistry.register(
+                clientId, clientType, baseCallbackUrl, defaultCallbackPath, clientPrompt, definitions);
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("clientId", clientId);
-        response.put("registered", registered.size());
-        response.put("tools", registered.stream().map(ToolDefinition::name).toList());
+        response.put("clientId", registered.clientId());
+        response.put("clientType", registered.clientType().name());
+        response.put("registered", registered.tools().size());
+        response.put("tools", registered.tools().stream().map(ToolDefinition::name).toList());
         return response;
     }
 
     /**
-     * GET /client-tools?clientId=xxx
-     * 查询已注册工具：带 clientId 只返回该客户端的工具，不带则返回所有客户端的全量工具（管理视角）。
+     * GET /clients
+     * 查询已注册客户端列表。
      */
     @GetMapping
-    public List<ToolDefinition> list(@RequestParam(required = false) String clientId) {
-        return clientId == null || clientId.isBlank() ? registry.listAll() : registry.list(clientId);
+    public List<Map<String, Object>> listClients() {
+        return clientRegistry.listClients().stream().map(client -> {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("clientId", client.clientId());
+            item.put("clientType", client.clientType().name());
+            item.put("baseCallbackUrl", client.baseCallbackUrl());
+            item.put("toolCount", client.tools().size());
+            item.put("tools", client.tools().stream().map(ToolDefinition::name).toList());
+            item.put("status", client.status());
+            return item;
+        }).toList();
     }
 
     /**
-     * GET /client-tools/{clientId}/{name}
+     * GET /clients/{clientId}/tools
+     * 查询某个客户端已注册的全部工具。
+     */
+    @GetMapping("/{clientId}/tools")
+    public List<ToolDefinition> listTools(@PathVariable String clientId) {
+        return clientRegistry.listTools(clientId);
+    }
+
+    /**
+     * GET /clients/{clientId}/tools/{name}
      * 查询某个客户端下的单个工具定义；不存在时返回 404。
      */
-    @GetMapping("/{clientId}/{name}")
+    @GetMapping("/{clientId}/tools/{name}")
     public ResponseEntity<ToolDefinition> getOne(@PathVariable String clientId, @PathVariable String name) {
-        return ResponseEntity.of(registry.get(clientId, name));
+        return ResponseEntity.of(clientRegistry.getTool(clientId, name));
     }
 
     /**
-     * DELETE /client-tools/{clientId}/{name}
+     * DELETE /clients/{clientId}/tools/{name}
      * 注销单个工具，客户端调整工具集时使用；返回 removed 表示是否确实删除。
      */
-    @DeleteMapping("/{clientId}/{name}")
-    public Map<String, Object> unregister(@PathVariable String clientId, @PathVariable String name) {
-        return Map.of("clientId", clientId, "name", name, "removed", registry.unregister(clientId, name));
+    @DeleteMapping("/{clientId}/tools/{name}")
+    public Map<String, Object> unregisterTool(@PathVariable String clientId, @PathVariable String name) {
+        return Map.of("clientId", clientId, "name", name,
+                "removed", clientRegistry.unregisterTool(clientId, name));
     }
 
     /**
-     * DELETE /client-tools/{clientId}
-     * 注销某个客户端的全部工具（客户端下线/租户回收时使用）；返回 removed 为删除数量。
+     * DELETE /clients/{clientId}
+     * 注销某个客户端（客户端下线/租户回收时使用）；返回 removed 为删除的工具数量。
      */
     @DeleteMapping("/{clientId}")
     public Map<String, Object> unregisterClient(@PathVariable String clientId) {
-        return Map.of("clientId", clientId, "removed", registry.unregisterClient(clientId));
+        return Map.of("clientId", clientId, "removed", clientRegistry.unregisterClient(clientId));
     }
 
     /**
