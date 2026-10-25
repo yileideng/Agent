@@ -18,12 +18,15 @@ public class ChatController {
     }
 
     /**
-     * 测试入口：GET /chat?prompt=我叫什么名字
+     * 测试入口：GET /chat?prompt=我叫什么名字&agent=mock|coze|cli
+     * agent 不传时使用配置中的默认适配器
      */
     @GetMapping("/chat")
-    public Map<String, String> chat(@RequestParam String prompt) {
-        ChatResult result = client.chat(prompt);
+    public Map<String, String> chat(@RequestParam String prompt,
+                                    @RequestParam(required = false) String agent) {
+        ChatResult result = client.chat(prompt, agent);
         return Map.of(
+                "agent", agent == null ? "default" : agent,
                 "sessionId", result.getBrainSession().getSessionId(),
                 "output", result.getOutput());
     }

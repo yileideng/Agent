@@ -1,11 +1,12 @@
 package com.agent.demo.clientagent.agent_brain;
 
-import org.springframework.stereotype.Component;
-
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-@Component
+/**
+ * 本地mock brain：固定走一次客户端工具调用后结束，仅用于验证调用链
+ * 由 MockAgentAdaptor 内部使用
+ */
 public class AgentBrain {
     // session存储，demo先用内存Map，实际应落库；web场景下多线程并发，用ConcurrentHashMap
     private final Map<String, BrainSession> sessions = new ConcurrentHashMap<>();

@@ -1,44 +1,30 @@
 package com.agent.demo.clientagent.agent_adaptor;
 
-import com.agent.demo.clientagent.agent_brain.AgentBrain;
 import com.agent.demo.clientagent.agent_brain.ChatResult;
-import com.agent.demo.clientagent.agent_brain.ChatResultType;
-import org.springframework.stereotype.Component;
 
-@Component
-public class AgentAdaptor {
-    private final AgentBrain agentBrain;
-    private ClientToolExecutor clientToolExecutor;
-
-    public AgentAdaptor(AgentBrain agentBrain) {
-        this.agentBrain = agentBrain;
-    }
-
-    public void setClientToolExecutor(ClientToolExecutor clientToolExecutor) {
-        this.clientToolExecutor = clientToolExecutor;
-    }
+/**
+ * Agent适配器接口：不同Agent的接入点，实现可插拔替换
+ * - MockAgentAdaptor：本地mock，验证客户端工具调用链
+ * - CozeAgentAdaptor：对接扣子托管智能体
+ * - CliAgentAdaptor：封装CLI Agent(Qwen Code / Claude Code)
+ */
+public interface AgentAdaptor {
 
     /**
-     * 执行Agent对话，触发方是客户端，内部调用AgentBrain执行
-     * @param userPrompt 用户提示词
-     * @param clientPrompt 客户端定制的系统提示词
-     * @param sessionId 对话的sessionID
-     * @return
+     * 适配器名称，供调用方通过参数选择使用哪个Agent
      */
-    public ChatResult chat(String userPrompt, String clientPrompt, String sessionId) {
-        // todo:这里暂时做成同步的，后续需要通过SSE推送ChatResult
-        ChatResult chatResult = agentBrain.chat(userPrompt, clientPrompt, sessionId);
-        if (chatResult.getResultType() == ChatResultType.CLIENT_TOOL_CALL) {
-            // Brain请求调用客户端工具，路由给客户端执行，客户端执行完会回调chat继续Agent Loop
-            System.out.println("[Adaptor] Brain请求调用客户端工具: " + chatResult.getToolName());
-            return clientToolExecutor.execute(
-                    chatResult.getToolName(),
-                    chatResult.getToolParameters(),
-                    chatResult.getBrainSession().getSessionId());
-        } else {
-            // FINAL_OUTPUT，通知客户端Agent调用结束
-            System.out.println("[Adaptor] Agent Loop结束");
-            return chatResult;
-        }
-    }
+    String name();
+
+    /**
+     * 执行Agent对话，触发方是客户端
+     * @param userPrompt 用户提示词或工具执行结果
+     * @param clientPrompt 客户端定制的系统提示词
+     * @param sessionId 对话的sessionID，为空表示新会话
+     */
+    ChatResult chat(String userPrompt, String clientPrompt, String sessionId);
+
+    /**
+     * 注册客户端工具执行器，Agent决定调用客户端工具时通过它路由回客户端执行
+     */
+    void setClientToolExecutor(ClientToolExecutor clientToolExecutor);
 }
