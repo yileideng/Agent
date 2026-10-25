@@ -33,7 +33,7 @@ public class UpdateNameTool implements ClientTool{
         // 修改客户端存储的用户姓名信息
         Client.name = parameters.get("updated_name");
         Map<String, String> toolResult = new HashMap<>();
-        System.out.println("GetNameTool result: " + toolResult);
+        System.out.println("UpdateNameTool result: " + toolResult);
         return toolResult;
     }
 }

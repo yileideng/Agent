@@ -1,5 +1,7 @@
 package com.agent.demo.agent_brain;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -20,19 +22,24 @@ public class BrainSession {
         return sessionId;
     }
 
-    public void setSessionId(String sessionId) {
-        this.sessionId = sessionId;
+    public List<Message> getMessageList() {
+        return messageList;
     }
 
     public BrainSession initSession(String sessionId) {
-        BrainSession brainSession = new BrainSession();
         if (sessionId == null || sessionId.isEmpty()) {
             // 初始化session
-            brainSession.setSessionId(UUID.randomUUID().toString());
-            return brainSession;
+            this.sessionId = UUID.randomUUID().toString();
+        } else {
+            // 如果sessionId存在，则沿用该sessionId
+            this.sessionId = sessionId;
         }
-        // 如果sessionId存在，则可以查询到对应的session信息，这里暂时只设置sessionId
-        brainSession.setSessionId(sessionId);
-        return brainSession;
+        this.messageList = new ArrayList<>();
+        this.sharedVariables = new HashMap<>();
+        return this;
+    }
+
+    public void addMessage(Message message) {
+        this.messageList.add(message);
     }
 }

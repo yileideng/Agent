@@ -6,7 +6,7 @@ import java.util.Map;
 public class GetNameTool implements ClientTool {
     @Override
     public String getName() {
-        return "GetNameTool Name";
+        return "get_name";
     }
 
     @Override
