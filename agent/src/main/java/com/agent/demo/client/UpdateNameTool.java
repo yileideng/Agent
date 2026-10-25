@@ -1,0 +1,39 @@
+package com.agent.demo.client;
+
+import java.util.HashMap;
+import java.util.Map;
+
+public class UpdateNameTool implements ClientTool{
+    @Override
+    public String getName() {
+        return "UpdateNameTool Name";
+    }
+
+    @Override
+    public String getDescription() {
+        return "UpdateNameTool Description";
+    }
+
+    @Override
+    public Map<String, String> getParameters() {
+        Map<String, String> map = new HashMap<String, String>();
+        map.put("updated_name", "string");
+        return map;
+    }
+
+    @Override
+    public Map<String, String> getRuntimeParameters() {
+        return new HashMap<>();
+    }
+
+    @Override
+    public Map<String, String> execute(Map<String, String> parameters) {
+        System.out.println("UpdateNameTool params: " + parameters);
+        System.out.println("UpdateNameTool execute");
+        // 修改客户端存储的用户姓名信息
+        Client.name = parameters.get("updated_name");
+        Map<String, String> toolResult = new HashMap<>();
+        System.out.println("GetNameTool result: " + toolResult);
+        return toolResult;
+    }
+}
