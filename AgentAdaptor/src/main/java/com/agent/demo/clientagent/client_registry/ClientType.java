@@ -1,4 +1,4 @@
-package com.agent.demo.clientagent.client_tool;
+package com.agent.demo.clientagent.client_registry;
 
 /**
  * 客户端类型，决定工具调用的传输方式。

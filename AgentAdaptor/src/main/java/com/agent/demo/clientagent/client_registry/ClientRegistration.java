@@ -1,4 +1,4 @@
-package com.agent.demo.clientagent.client_tool;
+package com.agent.demo.clientagent.client_registry;
 
 import java.time.Instant;
 import java.util.List;

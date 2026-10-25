@@ -424,7 +424,7 @@ qwen -p <prompt> --output-format stream-json \
 | 优先级 | 问题 | 位置 | 影响 |
 |---|---|---|---|
 | P0 | 注册接口与 `/mcp` 无鉴权，`clientId` 仍由调用方自报 | [ClientToolController.java](../AgentAdaptor/src/main/java/com/agent/demo/clientagent/controller/ClientToolController.java) / [McpServerController.java](../AgentAdaptor/src/main/java/com/agent/demo/clientagent/controller/McpServerController.java) | 可冒充任意客户端；接入 token 后才能作为真实租户边界 |
-| P0 | `callbackUrl` 未做域名白名单，存在 SSRF 风险 | [ToolRegistry.java](../AgentAdaptor/src/main/java/com/agent/demo/clientagent/client_tool/ToolRegistry.java) | 可回调内网地址 |
+| P0 | `callbackUrl` 未做域名白名单，存在 SSRF 风险 | [ToolRegistry.java](../AgentAdaptor/src/main/java/com/agent/demo/clientagent/client_registry/ToolRegistry.java) | 可回调内网地址 |
 | P0 | 用户数据放在静态字段 `Client.name` | [Client.java](../Client/src/main/java/com/agent/demo/agentclient/client/Client.java) | 多客户端场景会互相污染（仅演示客户端） |
 | P1 | CLI 在宿主直接运行，可读写宿主目录 | [CliAgentAdaptor.java](../AgentAdaptor/src/main/java/com/agent/demo/clientagent/agent_adaptor/impl/CliAgentAdaptor.java) | 越权、逃逸；已有独立工作目录但未沙箱 |
 | P1 | 模型 API Key 明文写在 `application.yml` | [application.yml](../AgentAdaptor/src/main/resources/application.yml) | 泄露风险（仓库公开） |

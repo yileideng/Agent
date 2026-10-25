@@ -54,6 +54,8 @@ public class CliAgentAdaptor implements AgentAdaptor {
     private final String mcpServerName;
     private final long timeoutSeconds;
     private final String workDir;
+    // 追加到CLI系统提示词的语言约束，CLI默认系统提示词是英文，需显式要求中文输出
+    private final String languagePrompt;
     private final AgentSessionStore sessionStore;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -67,6 +69,7 @@ public class CliAgentAdaptor implements AgentAdaptor {
                            @Value("${agent.cli.mcp-server-name:client-tools}") String mcpServerName,
                            @Value("${agent.cli.timeout-seconds:180}") long timeoutSeconds,
                            @Value("${agent.cli.work-dir:}") String workDir,
+                           @Value("${agent.cli.language-prompt:请始终使用简体中文回答用户。}") String languagePrompt,
                            AgentSessionStore sessionStore) {
         this.command = command;
         this.nodePath = nodePath;
@@ -78,6 +81,7 @@ public class CliAgentAdaptor implements AgentAdaptor {
         this.mcpServerName = mcpServerName;
         this.timeoutSeconds = timeoutSeconds;
         this.workDir = workDir;
+        this.languagePrompt = languagePrompt;
         this.sessionStore = sessionStore;
     }
 
@@ -115,7 +119,8 @@ public class CliAgentAdaptor implements AgentAdaptor {
         agentSession.addMessage(new Message("user", request.userPrompt()));
 
         // MCP 地址按客户端隔离：CLI 只会看到该客户端注册的工具
-        String clientMcpUrl = mcpUrlFor(clientId);
+        // 同时透传 endUserId/sessionId，移动端(MOBILE)客户端才能被精确路由到对应连接
+        String clientMcpUrl = mcpUrlFor(clientId, request.endUserId(), localSessionId);
         Path mcpConfig = null;
         if (clientMcpUrl != null) {
             mcpConfig = writeMcpConfig(clientMcpUrl);
@@ -212,9 +217,11 @@ public class CliAgentAdaptor implements AgentAdaptor {
             cmd.add("--resume");
             cmd.add(cliSessionId);
         }
-        if (request.clientPrompt() != null && !request.clientPrompt().isEmpty()) {
+        // 客户端定制提示词 + 语言约束一起追加，CLI默认系统提示词为英文，不显式要求会输出英文
+        String appendedPrompt = buildAppendedPrompt(request.clientPrompt());
+        if (!appendedPrompt.isEmpty()) {
             cmd.add("--append-system-prompt");
-            cmd.add(request.clientPrompt());
+            cmd.add(appendedPrompt);
         }
         // 显式鉴权：不配置时沿用CLI本地登录凭证，配置后非交互模式无需登录
         if (!authType.isEmpty()) {
@@ -289,12 +296,47 @@ public class CliAgentAdaptor implements AgentAdaptor {
         }
     }
 
-    private String mcpUrlFor(String clientId) {
+    /**
+     * 合并客户端定制提示词与语言约束；两者都为空时不追加，避免传空参数。
+     * 注意：Windows 下经 cmd 传参时参数内不能含换行，否则命令会被截断，这里用分号单行拼接。
+     */
+    private String buildAppendedPrompt(String clientPrompt) {
+        StringBuilder prompt = new StringBuilder();
+        if (clientPrompt != null && !clientPrompt.isBlank()) {
+            prompt.append(clientPrompt.trim());
+        }
+        if (languagePrompt != null && !languagePrompt.isBlank()) {
+            if (prompt.length() > 0) {
+                prompt.append('；');
+            }
+            prompt.append(languagePrompt.trim());
+        }
+        return prompt.toString();
+    }
+
+    /**
+     * 构造该会话专属的 MCP 地址：{mcp-url}/{clientId}?endUserId=..&sessionId=..
+     * clientId 决定可见工具范围，endUserId+sessionId 供中间件把 MOBILE 客户端的工具调用路由回具体连接
+     */
+    private String mcpUrlFor(String clientId, String endUserId, String sessionId) {
         if (mcpUrl == null || mcpUrl.isBlank()) {
             return null;
         }
         String base = mcpUrl.endsWith("/") ? mcpUrl.substring(0, mcpUrl.length() - 1) : mcpUrl;
-        return base + "/" + URLEncoder.encode(clientId, StandardCharsets.UTF_8);
+        StringBuilder url = new StringBuilder(base)
+                .append('/')
+                .append(URLEncoder.encode(clientId, StandardCharsets.UTF_8));
+        char separator = '?';
+        if (endUserId != null && !endUserId.isBlank()) {
+            url.append(separator).append("endUserId=")
+                    .append(URLEncoder.encode(endUserId, StandardCharsets.UTF_8));
+            separator = '&';
+        }
+        if (sessionId != null && !sessionId.isBlank()) {
+            url.append(separator).append("sessionId=")
+                    .append(URLEncoder.encode(sessionId, StandardCharsets.UTF_8));
+        }
+        return url.toString();
     }
 
     private Path writeMcpConfig(String clientMcpUrl) {

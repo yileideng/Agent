@@ -7,7 +7,7 @@ import com.agent.demo.clientagent.core.AgentSession;
 import com.agent.demo.clientagent.core.AgentResponse;
 import com.agent.demo.clientagent.core.AgentResponseType;
 import com.agent.demo.clientagent.core.Message;
-import com.agent.demo.clientagent.client_tool.ClientRegistry;
+import com.agent.demo.clientagent.client_registry.ClientRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;

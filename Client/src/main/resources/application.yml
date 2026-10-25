@@ -16,3 +16,18 @@ agent-client:
   client-prompt: 客户端定制化system prompt
   # 注册失败后的重试间隔
   register-retry-ms: 5000
+
+# 移动端客户端模拟（MOBILE 类型）：无公网回调地址，工具调用走 WebSocket
+agent-mobile:
+  # 移动端客户端唯一标识（与 SERVER 客户端区分，便于两条链路并存）
+  client-id: agent-mobile-client
+  # 终端用户标识，中间件按它做用户级隔离，保证工具调用不串到其他用户设备
+  end-user-id: demo-user
+  # 设备标识，多设备排查用
+  device-id: demo-phone
+  # 中间件 WebSocket 端点
+  ws-url: ws://localhost:8080/ws/agent
+  # 注入给 Agent 的移动端定制系统提示词
+  client-prompt: 移动端客户端定制化system prompt
+  # 注册/连接失败后的重试间隔
+  retry-ms: 5000

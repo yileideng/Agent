@@ -1,5 +1,6 @@
-package com.agent.demo.clientagent.client_tool;
+package com.agent.demo.clientagent.client_registry;
 
+import com.agent.demo.clientagent.ws.WsSessionManager;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -37,6 +38,11 @@ public class ClientRegistry {
     private final ConcurrentMap<String, ClientRegistration> clients = new ConcurrentHashMap<>();
 
     private final RestClient restClient = RestClient.create();
+    private final WsSessionManager wsSessionManager;
+
+    public ClientRegistry(WsSessionManager wsSessionManager) {
+        this.wsSessionManager = wsSessionManager;
+    }
 
     // ── 客户端注册 ──
 
@@ -217,17 +223,18 @@ public class ClientRegistry {
     }
 
     /**
-     * MOBILE 客户端工具执行：通过 WebSocket 推送到 session 绑定的连接。
-     * 待 WsSessionManager 实现后接入，当前先抛出未实现异常。
+     * MOBILE 客户端工具执行：通过 WebSocket 推送到 session 绑定的连接，并等待客户端回传结果。
+     * 路由按 (clientId, endUserId, sessionId) 隔离，保证不同终端用户不会串号。
      */
     private String executeViaWebSocket(String clientId,
                                        String endUserId,
                                        String sessionId,
                                        String toolName,
                                        Map<String, Object> arguments) {
-        throw new UnsupportedOperationException(
-                "MOBILE 客户端工具执行(WebSocket)尚未实现，clientId=" + clientId
-                        + ", sessionId=" + sessionId + ", tool=" + toolName);
+        getTool(clientId, toolName)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "客户端 " + clientId + " 未注册工具: " + toolName));
+        return wsSessionManager.invoke(clientId, endUserId, sessionId, toolName, arguments);
     }
 
     // ── 校验工具 ──

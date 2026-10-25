@@ -1,9 +1,9 @@
 package com.agent.demo.clientagent.controller;
 
-import com.agent.demo.clientagent.client_tool.ClientRegistration;
-import com.agent.demo.clientagent.client_tool.ClientRegistry;
-import com.agent.demo.clientagent.client_tool.ClientType;
-import com.agent.demo.clientagent.client_tool.ToolDefinition;
+import com.agent.demo.clientagent.client_registry.ClientRegistration;
+import com.agent.demo.clientagent.client_registry.ClientRegistry;
+import com.agent.demo.clientagent.client_registry.ClientType;
+import com.agent.demo.clientagent.client_registry.ToolDefinition;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.ResponseEntity;
@@ -14,7 +14,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
