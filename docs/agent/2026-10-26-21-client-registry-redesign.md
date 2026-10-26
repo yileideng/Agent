@@ -1,10 +1,10 @@
 # ClientRegistry 重构方案
 
 > 主题：将 `ToolRegistry` 重构为 `ClientRegistry`，把"客户端"提升为一级注册实体，支持服务端客户端（HTTP 回调）与移动端客户端（WS 推送）两种传输方式
-> 关联文档：[agent-middleware-design.md](./agent-middleware-design.md) / [agent-tool-discovery-and-calling.md](./agent-tool-discovery-and-calling.md)
+> 关联文档：[2026-10-26-23-agent-middleware-design.md](./2026-10-26-23-agent-middleware-design.md) / [2026-10-26-21-agent-tool-discovery-and-calling.md](./2026-10-26-21-agent-tool-discovery-and-calling.md)
 >
 > **历史说明**：本文记录重构过程，部分字段（`parameters`、`deviceId`）已过时；
-> 当前协议与接入方式以 [client-integration.md](./client-integration.md) 为准。
+> 当前协议与接入方式以 [2026-10-27-00-客户端接入指南.md](../user/2026-10-27-00-客户端接入指南.md) 为准。
 
 ---
 
@@ -264,7 +264,7 @@ execute(clientId, endUserId, sessionId, toolName, args)
 
 - MOBILE 执行时，工具调用按 `sessionId` 路由到发起该会话的 WS 连接
 - 不会出现"用户 A 的对话推到用户 B 的 App 上执行"的越权问题
-- 详见 [agent-tool-discovery-and-calling.md](./agent-tool-discovery-and-calling.md) 中"移动端回调方案"章节
+- 详见 [2026-10-26-21-agent-tool-discovery-and-calling.md](./2026-10-26-21-agent-tool-discovery-and-calling.md) 中"移动端回调方案"章节
 
 ---
 

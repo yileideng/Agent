@@ -4,7 +4,7 @@
 > 范围：文本流式输出 + thinking 独立通道
 > 不在本期范围：客户端工具 SSE 传输、聊天断点续传
 > 说明：自研 Brain 暂不支持流式，本期走一次性 final
-> 关联文档：[agent-gateway-design.md](./agent-gateway-design.md)、[client-integration.md](./client-integration.md)、[agent-middleware-design.md](./agent-middleware-design.md)
+> 关联文档：[2026-10-27-00-agent-gateway-design.md](./2026-10-27-00-agent-gateway-design.md)、[2026-10-27-00-客户端接入指南.md](../user/2026-10-27-00-客户端接入指南.md)、[2026-10-26-23-agent-middleware-design.md](./2026-10-26-23-agent-middleware-design.md)
 
 ## 1. 背景与目标
 

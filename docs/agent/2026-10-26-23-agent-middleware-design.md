@@ -3,7 +3,7 @@
 > 目标读者：本项目开发者 / 架构评审
 > 范围：把当前 demo 演进为可支撑多客户端接入的 Agent 中间件
 >
-> **文档定位**：本文是实现层设计与现状评估。产品定位、产品形态、CAP/AAP 协议与传输模型的最新方案见 [agent-gateway-design.md](./agent-gateway-design.md)，两者配合阅读。
+> **文档定位**：本文是实现层设计与现状评估。产品定位、产品形态、CAP/AAP 协议与传输模型的最新方案见 [2026-10-27-00-agent-gateway-design.md](./2026-10-27-00-agent-gateway-design.md)，两者配合阅读。
 
 ---
 
@@ -169,7 +169,7 @@ curl "http://localhost:8082/chat?prompt=我叫什么名字"
 - 工具名冲突：注册表主键为 `(tenantId, name)`；对模型展示时可保持原名，由 session 上下文决定解析哪一条。
 - `tools/call` 必须校验：该工具属于当前 session 的租户，否则返回 `isError`。
 
-> 当前实现：`ToolRegistry` 已按 `(clientId, name)` 存储工具，双客户端同名工具互不覆盖；MCP `/mcp/{clientId}` 也只返回当前客户端的工具。后续升级为租户 token 后，`clientId` 从 token 解析而非调用方自报。
+> 当前实现：`ClientRegistry` 已按 `(clientId, name)` 存储工具，双客户端同名工具互不覆盖；MCP `/mcp/{clientId}` 也只返回当前客户端的工具。后续升级为租户 token 后，`clientId` 从 token 解析而非调用方自报。
 
 ### 5.3 数据隔离
 
@@ -314,7 +314,7 @@ public record AgentRequest(String clientId, String userPrompt,
 | `cli` | 复用 Qwen Code / Claude Code 子进程，经 MCP 发现并调用客户端工具 |
 | `coze` | 扣子低代码智能体，能力在扣子平台配置 |
 
-`self` 适配器在中间件内完成完整 Agent Loop：调用 Agent 得到 `CLIENT_TOOL_CALL` → `ToolRegistry` 回调客户端执行 → 结果回传 Agent → 直到 `FINAL_OUTPUT`，并受 `agent.self.max-steps` 限制。
+`self` 适配器在中间件内完成完整 Agent Loop：调用 Agent 得到 `CLIENT_TOOL_CALL` → `ClientRegistry` 回调客户端执行 → 结果回传 Agent → 直到 `FINAL_OUTPUT`，并受 `agent.self.max-steps` 限制。
 
 会话状态统一由 `AgentSessionStore` 持有，不放在 Brain 或各 Adapter 的私有 Map 里：
 
@@ -450,12 +450,12 @@ qwen -p <prompt> --output-format stream-json \
 
 | 优先级 | 问题 | 位置 | 影响 |
 |---|---|---|---|
-| P0 | 注册接口与 `/mcp` 无鉴权，`clientId` 仍由调用方自报 | [ClientToolController.java](../AgentAdaptor/src/main/java/com/agent/demo/clientagent/controller/ClientToolController.java) / [McpServerController.java](../AgentAdaptor/src/main/java/com/agent/demo/clientagent/controller/McpServerController.java) | 可冒充任意客户端；接入 token 后才能作为真实租户边界 |
-| P0 | `callbackUrl` 未做域名白名单，存在 SSRF 风险 | [ToolRegistry.java](../AgentAdaptor/src/main/java/com/agent/demo/clientagent/client_registry/ToolRegistry.java) | 可回调内网地址 |
-| P0 | 用户数据放在静态字段 `Client.name` | [Client.java](../Client/src/main/java/com/agent/demo/agentclient/client/Client.java) | 多客户端场景会互相污染（仅演示客户端） |
-| P1 | CLI 在宿主直接运行，可读写宿主目录 | [CliAgentAdaptor.java](../AgentAdaptor/src/main/java/com/agent/demo/clientagent/agent_adaptor/impl/CliAgentAdaptor.java) | 越权、逃逸；已有独立工作目录但未沙箱 |
-| P1 | 模型 API Key 明文写在 `application.yml` | [application.yml](../AgentAdaptor/src/main/resources/application.yml) | 泄露风险（仓库公开） |
-| P2 | 会话来内存态，重启即丢 | [AgentSessionStore.java](../AgentAdaptor/src/main/java/com/agent/demo/clientagent/core/AgentSessionStore.java) | 无法水平扩展/故障恢复 |
+| P0 | 注册接口与 `/mcp` 无鉴权，`clientId` 仍由调用方自报 | [ClientToolController.java](../../AgentAdaptor/src/main/java/com/agent/demo/clientagent/controller/ClientToolController.java) / [McpServerController.java](../../AgentAdaptor/src/main/java/com/agent/demo/clientagent/controller/McpServerController.java) | 可冒充任意客户端；接入 token 后才能作为真实租户边界 |
+| P0 | `callbackUrl` 未做域名白名单，存在 SSRF 风险 | [ClientRegistry.java](../../AgentAdaptor/src/main/java/com/agent/demo/clientagent/client_registry/ClientRegistry.java) | 可回调内网地址 |
+| P0 | 用户数据放在静态字段 `Client.name` | [Client.java](../../Client/src/main/java/com/agent/demo/agentclient/client/Client.java) | 多客户端场景会互相污染（仅演示客户端） |
+| P1 | CLI 在宿主直接运行，可读写宿主目录 | [CliAgentAdaptor.java](../../AgentAdaptor/src/main/java/com/agent/demo/clientagent/agent_adaptor/impl/CliAgentAdaptor.java) | 越权、逃逸；已有独立工作目录但未沙箱 |
+| P1 | 模型 API Key 明文写在 `application.yml` | [application.yml](../../AgentAdaptor/src/main/resources/application.yml) | 泄露风险（仓库公开） |
+| P2 | 会话来内存态，重启即丢 | [AgentSessionStore.java](../../AgentAdaptor/src/main/java/com/agent/demo/clientagent/core/AgentSessionStore.java) | 无法水平扩展/故障恢复 |
 | P2 | 工具调用无超时/重试/审计 | Tool Router 缺失 | 生产不可用 |
 
 已完成的历史问题：全局 `Map<name, tool>` 已被 `(clientId, name)` 工具目录替代；`/chat` 已支持 `sessionId` 多轮；`sessionMap` 无上限无过期已由 `AgentSessionStore` + TTL 清理解决；MockAgent 与进程内 Client 已拆除，`agent_brain` 与 `client` 已拆为独立模块。

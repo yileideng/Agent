@@ -4,7 +4,8 @@
 > 版本：v0.1（2026-10）
 > 目标读者：产品 / 架构 / 客户端接入方 / Agent 接入方
 > 文档定位：产品定位、产品形态、核心链路、传输模型、CAP/AAP 协议与演进路线
-> 关联文档：[agent-middleware-design.md](./agent-middleware-design.md)（实现层设计与现状评估）、[agent-tool-discovery-and-calling.md](./agent-tool-discovery-and-calling.md)（工具发现与调用机制）、[client-registry-redesign.md](./client-registry-redesign.md)（ClientRegistry 重构记录）
+> 现状：本文包含目标设计。当前已实现范围以 [2026-10-26-23-agent-middleware-design.md](./2026-10-26-23-agent-middleware-design.md) 第 12 节为准；token 鉴权、SSE 客户端工具、riskLevel/outputSchema、chat_ack/cancel/usage 等仍属规划。
+> 关联文档：[2026-10-26-23-agent-middleware-design.md](./2026-10-26-23-agent-middleware-design.md)（实现层设计与现状评估）、[2026-10-26-21-agent-tool-discovery-and-calling.md](./2026-10-26-21-agent-tool-discovery-and-calling.md)（工具发现与调用机制）、[2026-10-26-21-client-registry-redesign.md](./2026-10-26-21-client-registry-redesign.md)（ClientRegistry 重构记录）
 
 ---
 
@@ -389,6 +390,7 @@ Client  <--- CAP（统一、稳定、版本化） --->  Gateway  <--- AAP（异�
 | `cancel` | C→S | 取消对话/工具调用 | `targetId` |
 | `ping` / `pong` | 双向 | 心跳 | — |
 
+> 当前实现尚未落地 `chat_ack` / `cancel` / `usage`；`deviceId` 多设备路由也未实现。
 > `hello` 中的 `clientId` / `endUserId` 仅用于一致性校验与日志，**权威值一律来自 token**；两者不一致时以 token 为准并记录告警。
 
 ### 6.3 ToolDefinition
@@ -439,6 +441,8 @@ Client  <--- CAP（统一、稳定、版本化） --->  Gateway  <--- AAP（异�
 | `timeoutMs` | 否 | 单次调用超时，缺省取客户端配置 |
 | `idempotent` | 否 | 是否可安全重试，默认 `false` |
 | `version` | 否 | 工具定义版本 |
+
+> 当前代码的 `ToolDefinition` 只实现 `name / description / callbackPath / inputSchema`；`title / outputSchema / riskLevel / timeoutMs / idempotent / version` 是规划字段。
 
 ### 6.4 典型时序
 
@@ -585,7 +589,7 @@ sessionId 精确匹配 → (clientId, endUserId, deviceId) 唯一连接 → CLIE
 
 - **对话**：`{command} -p <prompt> --output-format stream-json`，逐行解析 JSON 事件。
 - **流式**：`assistant` 文本映射为 CAP `delta`；`thinking` / `thinking_delta` / `reasoning_content` 映射为 CAP `thinking`，两者不混流。
-- **工具**：网关对 CLI 暴露 MCP Server（`POST /mcp/{sessionToken}`），CLI 通过 `--mcp-config` 连接。
+- **工具**：网关对 CLI 暴露 MCP Server（`POST /mcp/{clientId}`），CLI 通过 `--mcp-config` 连接。
 - **会话**：`--resume <agentSessionRef>`；但**会话真相源在网关**，CLI 的 session 只是加速。
 - **系统提示**：`--append-system-prompt` 注入客户端提示词 + 语言指令 + 安全约束。
 - **能力**：子 agent、hooks、skills 等 CLI 私有能力不强行映射到 CAP；需要时作为 Agent 侧增强，不影响客户端协议。
@@ -602,9 +606,9 @@ sessionId 精确匹配 → (clientId, endUserId, deviceId) 唯一连接 → CLIE
 ### 7.4 扣子适配器（Coze）
 
 - 使用 Coze OpenAPI 的流式对话；
-- `CONVERSATION_CHAT_REQUIRES_ACTION` 事件映射为 `tool_call`；
 - 会话映射：网关 `sessionId ↔ conversationId`；
-- 适配器负责厂商事件 → `AgentEvent` 的翻译。
+- 适配器负责厂商事件 → `AgentEvent` 的翻译；
+- **当前只实现文本流式**；`CONVERSATION_CHAT_REQUIRES_ACTION → tool_call` 尚未接入。
 
 ### 7.5 会话归属与能力协商
 
@@ -668,10 +672,10 @@ sessionId 精确匹配 → (clientId, endUserId, deviceId) 唯一连接 → CLIE
 
 | 模块 | 端口 | 职责 | 关键类 |
 |---|---|---|---|
-| `AgentAdaptor` | 8080 | 网关：适配器、会话、工具目录、MCP、WS | [AgentAdaptor.java](../AgentAdaptor/src/main/java/com/agent/demo/clientagent/agent_adaptor/AgentAdaptor.java)、[ClientRegistry.java](../AgentAdaptor/src/main/java/com/agent/demo/clientagent/client_registry/ClientRegistry.java)、[WsSessionManager.java](../AgentAdaptor/src/main/java/com/agent/demo/clientagent/ws/WsSessionManager.java) |
-| `BrainAgent` | 8081 | 自研 Agent 服务：无状态决策 | [BrainController.java](../BrainAgent/src/main/java/com/agent/demo/agentbrain/controller/BrainController.java)、[SelfAgentBrain.java](../BrainAgent/src/main/java/com/agent/demo/agentbrain/service/SelfAgentBrain.java) |
-| `AgentClientSdk` | — | 客户端 SDK：统一 HTTP 回调与 WebSocket 接入，被 Client 依赖 | [AgentClient.java](../AgentClientSdk/src/main/java/com/agent/demo/agentsdk/AgentClient.java)、[Transport.java](../AgentClientSdk/src/main/java/com/agent/demo/agentsdk/Transport.java) |
-| `Client` | 8082 | SDK 的示例消费者：注册工具、执行回调、WS 移动端 | [Client.java](../Client/src/main/java/com/agent/demo/agentclient/client/Client.java)、[MobileClient.java](../Client/src/main/java/com/agent/demo/agentclient/client/MobileClient.java) |
+| `AgentAdaptor` | 8080 | 网关：适配器、会话、工具目录、MCP、WS | [AgentAdaptor.java](../../AgentAdaptor/src/main/java/com/agent/demo/clientagent/agent_adaptor/AgentAdaptor.java)、[ClientRegistry.java](../../AgentAdaptor/src/main/java/com/agent/demo/clientagent/client_registry/ClientRegistry.java)、[WsSessionManager.java](../../AgentAdaptor/src/main/java/com/agent/demo/clientagent/ws/WsSessionManager.java) |
+| `BrainAgent` | 8081 | 自研 Agent 服务：无状态决策 | [BrainController.java](../../BrainAgent/src/main/java/com/agent/demo/agentbrain/controller/BrainController.java)、[SelfAgentBrain.java](../../BrainAgent/src/main/java/com/agent/demo/agentbrain/service/SelfAgentBrain.java) |
+| `AgentClientSdk` | — | 客户端 SDK：统一 HTTP 回调与 WebSocket 接入，被 Client 依赖 | [AgentClient.java](../../AgentClientSdk/src/main/java/com/agent/demo/agentsdk/AgentClient.java)、[Transport.java](../../AgentClientSdk/src/main/java/com/agent/demo/agentsdk/Transport.java) |
+| `Client` | 8082 | SDK 的示例消费者：注册工具、执行回调、WS 移动端 | [Client.java](../../Client/src/main/java/com/agent/demo/agentclient/client/Client.java)、[MobileClient.java](../../Client/src/main/java/com/agent/demo/agentclient/client/MobileClient.java) |
 
 ### 9.2 差距
 
@@ -764,11 +768,14 @@ sessionId 精确匹配 → (clientId, endUserId, deviceId) 唯一连接 → CLIE
 
 ### 12.3 相关文档
 
-- [client-integration.md](./client-integration.md)：客户端接入指南（HTTP 回调 / WebSocket、Java / JS 示例、排障清单）
-- [streaming-design.md](./streaming-design.md)：Agent 文本流式输出（CAP SSE）设计
-- [agent-middleware-design.md](./agent-middleware-design.md)：实现层设计与当前完成度评估
-- [agent-tool-discovery-and-calling.md](./agent-tool-discovery-and-calling.md)：Agent 如何发现并调用客户端工具
-- [client-registry-redesign.md](./client-registry-redesign.md)：ClientRegistry 重构方案
+- [2026-10-27-00-文档索引.md](../2026-10-27-00-文档索引.md)：文档分类、日期约定与索引
+- [2026-10-27-00-客户端快速接入.md](../user/2026-10-27-00-客户端快速接入.md)：外部客户端快速接入
+- [2026-10-27-00-客户端接入指南.md](../user/2026-10-27-00-客户端接入指南.md)：CAP 协议、工具回调、流式与排障
+- [2026-10-27-00-streaming-design.md](./2026-10-27-00-streaming-design.md)：Agent 文本流式输出（CAP SSE）设计
+- [2026-10-27-00-AgentAdaptor核心思想.md](../user/2026-10-27-00-AgentAdaptor核心思想.md)：AgentAdaptor 核心思想（工具面 / 协议面）
+- [2026-10-26-23-agent-middleware-design.md](./2026-10-26-23-agent-middleware-design.md)：实现层设计与当前完成度评估
+- [2026-10-26-21-agent-tool-discovery-and-calling.md](./2026-10-26-21-agent-tool-discovery-and-calling.md)：Agent 如何发现并调用客户端工具
+- [2026-10-26-21-client-registry-redesign.md](./2026-10-26-21-client-registry-redesign.md)：ClientRegistry 重构方案
 
 ### 12.4 后续文档计划
 
