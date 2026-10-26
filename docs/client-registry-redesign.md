@@ -2,6 +2,9 @@
 
 > 主题：将 `ToolRegistry` 重构为 `ClientRegistry`，把"客户端"提升为一级注册实体，支持服务端客户端（HTTP 回调）与移动端客户端（WS 推送）两种传输方式
 > 关联文档：[agent-middleware-design.md](./agent-middleware-design.md) / [agent-tool-discovery-and-calling.md](./agent-tool-discovery-and-calling.md)
+>
+> **历史说明**：本文记录重构过程，部分字段（`parameters`、`deviceId`）已过时；
+> 当前协议与接入方式以 [client-integration.md](./client-integration.md) 为准。
 
 ---
 

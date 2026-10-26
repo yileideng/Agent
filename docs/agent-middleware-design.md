@@ -2,6 +2,8 @@
 
 > 目标读者：本项目开发者 / 架构评审
 > 范围：把当前 demo 演进为可支撑多客户端接入的 Agent 中间件
+>
+> **文档定位**：本文是实现层设计与现状评估。产品定位、产品形态、CAP/AAP 协议与传输模型的最新方案见 [agent-gateway-design.md](./agent-gateway-design.md)，两者配合阅读。
 
 ---
 
@@ -76,19 +78,20 @@
 
 ### 3.1 当前代码的模块划分
 
-代码已按"中间件 / Agent / 客户端"三个可独立部署的进程拆分，Agent 与客户端都可整体替换：
+代码已按"中间件 / Agent / 客户端"三个可独立部署的进程拆分，Agent 与客户端都可整体替换；另外有一个**由中间件团队提供的客户端 SDK 库**：
 
 | 模块 | 端口 | 职责 | 关键包 |
 |---|---|---|---|
-| `AgentAdaptor` | 8080 | 中间件：适配器注册表、会话持有、工具目录、MCP 网关、`(clientId,name)` 隔离 | `agent_adaptor`（含 `impl` 子包）、`core`、`client_tool`、`controller` |
+| `AgentAdaptor` | 8080 | 中间件：适配器注册表、会话持有、工具目录、MCP 网关、`(clientId,endUserId)` 隔离 | `agent_adaptor`（含 `impl` 子包）、`core`、`client_registry`、`controller`、`ws` |
 | `BrainAgent` | 8081 | 自研 Agent 服务：只做决策（返回客户端工具调用或最终输出），**无状态、不持有会话** | `api`、`service`、`controller` |
-| `Client` | 8082 | 自研客户端：注册本地工具 → 接收工具回调执行 → 向中间件发起对话 | `client`、`controller` |
+| `AgentClientSdk` | — | 客户端 SDK：统一注册、HTTP 回调/WebSocket、tool_call 分发、心跳与重连 | `com.agent.demo.agentsdk` |
+| `Client` | 8082 | SDK 的示例消费者：声明工具、执行工具回调、向中间件发起对话 | `client`、`tool`、`controller` |
 
 调用闭环：
 
 ```
-Client(8082) --GET /chat--> AgentAdaptor(8080) --POST /v1/brain/chat--> BrainAgent(8081)
-        ^                              |  (会话、消息历史在此持有)
+Client(8082) --POST /chat--> AgentAdaptor(8080) --POST /v1/brain/chat--> BrainAgent(8081)
+        ^                              |  (会话归属在此持有)
         |                              v
         +----POST /client/tools/execute----+  (工具由中间件按 clientId 路由回客户端执行)
 ```
@@ -98,6 +101,8 @@ Client(8082) --GET /chat--> AgentAdaptor(8080) --POST /v1/brain/chat--> BrainAge
 ### 3.2 启动方式（本地）
 
 ```bash
+# 0) 首次构建：安装客户端 SDK 到本地 Maven 仓库（Client 依赖它）
+mvn -q -DskipTests install
 # 1) Agent 服务
 mvn -pl BrainAgent   spring-boot:run     # http://localhost:8081
 # 2) 中间件
@@ -202,8 +207,29 @@ Headers: X-Tenant-Id, X-Timestamp, X-Nonce, X-Signature(HMAC-SHA256)
 Body: {
   "callbackUrl": "https://xiaohongshu.example.com/agent/tools",
   "tools": [
-    {"name": "update_note", "description": "修改用户笔记", "parameters": {"note_id":"string","content":"string"}},
-    {"name": "pick_photos", "description": "从用户相册挑选图片", "parameters": {"count":"integer"}}
+    {
+      "name": "update_note",
+      "description": "修改用户笔记",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "note_id": {"type": "string", "description": "要修改的笔记 ID"},
+          "content": {"type": "string", "description": "新的笔记正文"}
+        },
+        "required": ["note_id", "content"]
+      }
+    },
+    {
+      "name": "pick_photos",
+      "description": "从用户相册挑选图片",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "count": {"type": "integer", "description": "挑选的图片数量"}
+        },
+        "required": ["count"]
+      }
+    }
   ]
 }
 ```
@@ -292,8 +318,8 @@ public record AgentRequest(String clientId, String userPrompt,
 
 会话状态统一由 `AgentSessionStore` 持有，不放在 Brain 或各 Adapter 的私有 Map 里：
 
-- 键：`(adaptor, clientId, sessionId)`，`clientId` 即租户边界；
-- 内容：中间件侧 `AgentSession`（消息历史 + 客户端共享变量）+ Agent 侧会话引用（CLI `session_id` / 扣子 `conversationId`）；
+- 键：`(adaptor, clientId, endUserId, sessionId)`，`clientId + endUserId` 是用户边界；
+- 内容：当前只保留 `sessionId` + Agent 侧会话引用（CLI `session_id` / 扣子 `conversationId`）；消息历史/共享变量等接入真实模型时再补；
 - TTL + 定时清理，替换为 Redis/DB 时只需改这一个类。
 
 ### 7.2 CLI Agent 接入（当前主路线）
@@ -332,16 +358,17 @@ qwen -p <prompt> --output-format stream-json \
 | 接口 | 归属 | 说明 |
 |---|---|---|
 | `GET /agents` | 中间件 | Agent 能力发现：返回默认 Agent 及每个 Agent 的描述、能力标签、是否可用 |
-| `GET /chat?prompt=&agent=&clientId=&sessionId=&clientPrompt=` | 中间件 | 客户端发起对话，由独立客户端（`Client` 模块）调用。不传 `sessionId` 表示新会话，返回 `clientId/agent/sessionId/output` |
-| `POST /v1/brain/chat` | BrainAgent | 自研 Agent 决策接口：入参 `clientId/sessionId/newSession/userPrompt/clientPrompt`，返回 `CLIENT_TOOL_CALL`（含工具名与参数）或 `FINAL_OUTPUT` |
-| `GET /chat?prompt=&agent=&sessionId=` | Client | 自研客户端的对话入口，转发中间件 `/chat` 并原样返回结果 |
-| `POST /client/tools/execute` | Client | 自研客户端实现的工具执行回调，中间件按 `callbackUrl` 调用它 |
-| `POST /client-tools/register` | 中间件 | 注册/更新客户端工具：`clientId` + `callbackUrl` + `tools`，参数与回调地址做校验，非法返回 400 |
-| `GET /client-tools?clientId=` | 中间件 | 查询工具；带 `clientId` 只看该客户端的工具，不带返回全量（管理视角） |
-| `GET /client-tools/{clientId}/{name}` | 中间件 | 查询单个工具定义 |
-| `DELETE /client-tools/{clientId}/{name}` | 中间件 | 注销单个工具 |
-| `DELETE /client-tools/{clientId}` | 中间件 | 注销该客户端全部工具（客户端下线/租户回收） |
-| `POST /mcp/{clientId}` | 中间件 | MCP 端点，按 `clientId` 裁剪工具与路由调用；也支持 `X-Client-Id` 请求头，缺省用 `agent.default-client-id` |
+| `POST /chat` | 中间件 | CAP v0.1 对话入口：请求体 `{v,id,type:"chat",payload:{clientId,endUserId,sessionId?,prompt,agent?,clientPrompt?}}`；返回 `final` 信封（`sessionId/chatId/agent/output`） |
+| `POST /v1/brain/chat` | BrainAgent | 自研 Agent 决策接口：入参 `clientId/endUserId/sessionId/newSession/userPrompt/clientPrompt`，返回 `CLIENT_TOOL_CALL`（含工具名与参数）或 `FINAL_OUTPUT` |
+| `GET /chat?prompt=&agent=&sessionId=` | Client | 自研客户端的用户入口，内部以 `POST /chat` 信封转发中间件，返回 `final` 信封 |
+| `POST /client/tools/execute` | Client | 工具回调端点；请求和响应都是 CAP 信封 |
+| `POST /clients/register` | 中间件 | CAP v0.1 注册入口：`register_tools` 信封，包含 `clientType/baseCallbackUrl/tools` 等；非法返回 400 + `error` 信封 |
+| `GET /clients` | 中间件 | 查询已注册客户端列表 |
+| `GET /clients/{clientId}/tools` | 中间件 | 查询某个客户端的全部工具 |
+| `GET /clients/{clientId}/tools/{name}` | 中间件 | 查询单个工具定义 |
+| `DELETE /clients/{clientId}/tools/{name}` | 中间件 | 注销单个工具 |
+| `DELETE /clients/{clientId}` | 中间件 | 注销该客户端全部工具 |
+| `POST /mcp/{clientId}` | 中间件 | MCP 端点，按 URL 中的 `clientId` 裁剪工具与路由调用；CLI 的 mcp-config 直接拼 `{mcp-url}/{clientId}` |
 
 ### 8.2 生产化演进（带版本号与鉴权）
 

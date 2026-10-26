@@ -17,24 +17,28 @@ import java.util.concurrent.ConcurrentMap;
 @Component
 public class AgentSessionStore {
 
+    /** 未指定 clientId 时使用的默认客户端。 */
     private static final String DEFAULT_CLIENT = "default";
 
     /**
-     * 单个会话的状态：中间件持有，Agent 侧会话ID只作为加速续接的引用
+     * 单个会话的状态：中间件持有，Agent 侧会话ID只作为加速续接的引用。
      */
     public static final class SessionState {
-        private final AgentSession agentSession;
+        /** 中间件侧的会话 ID（带 clientId:endUserId 前缀）。 */
+        private final String sessionId;
+        /** Agent 侧会话 ID：CLI 的 session_id / 扣子的 conversationId。 */
         private volatile String externalSessionId;
+        /** 最后一次访问时间，用于 TTL 清理。 */
         private volatile long lastAccessAt;
 
         private SessionState(String sessionId) {
-            this.agentSession = new AgentSession().initSession(sessionId);
+            this.sessionId = sessionId;
             this.lastAccessAt = System.currentTimeMillis();
         }
 
-        public AgentSession brainSession() {
+        public String sessionId() {
             touch();
-            return agentSession;
+            return sessionId;
         }
 
         /**
@@ -59,7 +63,9 @@ public class AgentSessionStore {
         }
     }
 
+    /** 会话键 (adaptor|clientId|endUserId|sessionId) -> 会话状态。 */
     private final ConcurrentMap<String, SessionState> sessions = new ConcurrentHashMap<>();
+    /** 会话空闲多久后过期。 */
     private final long ttlMillis;
 
     public AgentSessionStore(@Value("${agent.session.ttl-minutes:120}") long ttlMinutes) {
@@ -67,10 +73,11 @@ public class AgentSessionStore {
     }
 
     /**
-     * 生成/规范化会话ID：为空时新建，非空时补上客户端前缀，保证不同客户端即使传相同 sessionId 也不会串号。
+     * 生成/规范化会话ID：为空时新建，非空时补上 (clientId, endUserId) 前缀，
+     * 保证不同客户端、不同终端用户即使传相同 sessionId 也不会串号。
      */
-    public String resolveSessionId(String clientId, String sessionId) {
-        String scope = scope(clientId);
+    public String resolveSessionId(String clientId, String endUserId, String sessionId) {
+        String scope = scope(clientId) + ":" + scope(endUserId);
         if (sessionId == null || sessionId.isBlank()) {
             return scope + ":" + UUID.randomUUID();
         }
@@ -78,19 +85,15 @@ public class AgentSessionStore {
         return sessionId.startsWith(prefix) ? sessionId : prefix + sessionId;
     }
 
-    public SessionState getOrCreate(String adaptor, String clientId, String sessionId) {
-        SessionState state = sessions.computeIfAbsent(key(adaptor, clientId, sessionId),
+    /**
+     * 按 (adaptor, clientId, endUserId, sessionId) 取会话状态，不存在则创建。
+     */
+    public SessionState getOrCreate(String adaptor, String clientId, String endUserId, String sessionId) {
+        SessionState state = sessions.computeIfAbsent(
+                key(adaptor, clientId, endUserId, sessionId),
                 ignored -> new SessionState(sessionId));
         state.touch();
         return state;
-    }
-
-    public void remove(String adaptor, String clientId, String sessionId) {
-        sessions.remove(key(adaptor, clientId, sessionId));
-    }
-
-    public int size() {
-        return sessions.size();
     }
 
     /**
@@ -107,8 +110,8 @@ public class AgentSessionStore {
         }
     }
 
-    private String key(String adaptor, String clientId, String sessionId) {
-        return adaptor + "|" + scope(clientId) + "|" + sessionId;
+    private String key(String adaptor, String clientId, String endUserId, String sessionId) {
+        return adaptor + "|" + scope(clientId) + "|" + scope(endUserId) + "|" + sessionId;
     }
 
     private String scope(String clientId) {

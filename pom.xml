@@ -7,14 +7,16 @@
     <version>0.0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>agent-platform</name>
-    <description>客户端Agent中间件平台：中间件 + 自研Agent服务 + 自研客户端</description>
+    <description>客户端Agent中间件平台：中间件 + 自研Agent服务 + 客户端SDK + 自研客户端</description>
 
     <modules>
         <!-- 中间件：Agent适配层 + 客户端工具网关 + MCP -->
         <module>AgentAdaptor</module>
         <!-- 自研Agent服务：负责Agent决策，被中间件通过HTTP适配 -->
         <module>BrainAgent</module>
-        <!-- 自研客户端：注册工具、执行工具回调、向中间件发起对话 -->
+        <!-- 客户端 SDK：由中间件团队提供，统一 HTTP 回调与 WebSocket 接入 -->
+        <module>AgentClientSdk</module>
+        <!-- 自研客户端：SDK 的示例消费者，注册工具、执行工具回调、发起对话 -->
         <module>Client</module>
     </modules>
 </project>

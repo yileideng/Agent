@@ -16,7 +16,9 @@ import java.util.stream.Collectors;
 @Component
 public class AgentAdaptorRegistry {
 
+    /** 适配器名称 -> 实现。 */
     private final Map<String, AgentAdaptor> adaptors;
+    /** 请求未指定 agent 时使用的默认适配器名称。 */
     private final String defaultAdaptor;
 
     public AgentAdaptorRegistry(List<AgentAdaptor> adaptorList,
@@ -39,10 +41,16 @@ public class AgentAdaptorRegistry {
         return adaptor;
     }
 
+    /**
+     * 返回所有已注册的适配器，供 /agents 能力发现接口使用。
+     */
     public List<AgentAdaptor> all() {
         return List.copyOf(adaptors.values());
     }
 
+    /**
+     * 默认适配器名称；请求未显式指定 agent 时使用。
+     */
     public String defaultAdaptor() {
         return defaultAdaptor;
     }

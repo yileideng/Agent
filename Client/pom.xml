@@ -19,6 +19,12 @@
     </properties>
 
     <dependencies>
+        <!-- 客户端 SDK：由中间件团队提供，Client 只是它的一个示例消费者 -->
+        <dependency>
+            <groupId>com.agent.demo</groupId>
+            <artifactId>AgentClientSdk</artifactId>
+            <version>0.0.1-SNAPSHOT</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-restclient</artifactId>

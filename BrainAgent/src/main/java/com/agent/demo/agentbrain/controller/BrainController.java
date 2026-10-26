@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/v1/brain")
 public class BrainController {
 
+    /** 自研 Agent 的决策实现。 */
     private final SelfAgentBrain selfAgentBrain;
 
     public BrainController(SelfAgentBrain selfAgentBrain) {
@@ -25,9 +26,26 @@ public class BrainController {
 
     /**
      * POST /v1/brain/chat
-     * 中间件发起一次 Agent 决策：传本次输入与会话标识，返回工具调用或最终输出。
-     * 请求体：{"clientId","sessionId","newSession","userPrompt","clientPrompt"}
-     * 响应体：{"type":"CLIENT_TOOL_CALL|FINAL_OUTPUT","toolName","toolParameters","output"}
+     *
+     * <p>作用：中间件发起一次 Agent 决策。Brain 无状态，只根据本次输入返回
+     * “调用客户端工具”或“最终输出”，会话历史由中间件持有。
+     *
+     * <p>入参：
+     * <ul>
+     *   <li>{@code clientId}：调用方客户端（租户）；</li>
+     *   <li>{@code endUserId}：终端用户，用于多用户隔离；</li>
+     *   <li>{@code sessionId}：中间件持有的会话 ID；</li>
+     *   <li>{@code newSession}：是否本轮为新会话；</li>
+     *   <li>{@code userPrompt}：用户输入，或上一步工具的执行结果；</li>
+     *   <li>{@code clientPrompt}：客户端定制的系统提示词。</li>
+     * </ul>
+     *
+     * <p>返回 200：
+     * <ul>
+     *   <li>{@code type=CLIENT_TOOL_CALL}：需要中间件调用客户端工具，
+     *       带 {@code toolName} + {@code toolParameters}；</li>
+     *   <li>{@code type=FINAL_OUTPUT}：本轮结束，带 {@code output}。</li>
+     * </ul>
      */
     @PostMapping(value = "/chat", produces = MediaType.APPLICATION_JSON_VALUE)
     public BrainChatResponse chat(@RequestBody BrainChatRequest request) {

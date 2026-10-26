@@ -1,5 +1,6 @@
-package com.agent.demo.agentclient.client;
+package com.agent.demo.agentclient.tool;
 
+import com.agent.demo.agentclient.client.Client;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
@@ -21,23 +22,20 @@ public class GetNameTool implements ClientTool {
     }
 
     @Override
-    public Map<String, String> getParameters() {
-        Map<String, String> map = new HashMap<>();
-        map.put("name_query", "string");
-        return map;
+    /**
+     * 无参数：当前登录用户由 endUserId/session 隐式确定，不需要模型传参。
+     */
+    public Map<String, Object> getInputSchema() {
+        return Map.of("type", "object", "additionalProperties", false);
     }
 
     @Override
-    public Map<String, String> getReturnParameters() {
-        Map<String, String> map = new HashMap<>();
-        map.put("name", "string");
-        return map;
-    }
-
-    @Override
-    public Map<String, String> execute(Map<String, String> parameters) {
+    /**
+     * 读取客户端本地保存的当前用户姓名。
+     */
+    public Map<String, Object> execute(Map<String, Object> parameters) {
         System.out.println("[AgentClient][GetNameTool] params: " + parameters);
-        Map<String, String> toolResult = new HashMap<>();
+        Map<String, Object> toolResult = new HashMap<>();
         // 查询客户端存储的用户姓名信息，并通过toolResult返回给Agent
         toolResult.put("name", Client.name);
         System.out.println("[AgentClient][GetNameTool] result: " + toolResult);

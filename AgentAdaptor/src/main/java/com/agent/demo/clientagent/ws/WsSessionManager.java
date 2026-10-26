@@ -1,5 +1,6 @@
 package com.agent.demo.clientagent.ws;
 
+import com.agent.demo.clientagent.core.ToolCallContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -38,13 +39,21 @@ import java.util.concurrent.TimeoutException;
 @Component
 public class WsSessionManager {
 
+    /** 未指定 endUserId 时使用的默认用户。 */
     private static final String DEFAULT_END_USER = "default";
 
-    /** 一条已建立的 WebSocket 连接 */
+    /**
+     * 一条已建立的 WebSocket 连接。
+     *
+     * @param connectionId WS session ID
+     * @param clientId     客户端标识
+     * @param endUserId    终端用户标识
+     * @param sessionId    可选，连接建立时已知的会话 ID
+     * @param session      底层 WebSocket 会话
+     */
     public record ConnectionInfo(String connectionId,
                                  String clientId,
                                  String endUserId,
-                                 String deviceId,
                                  String sessionId,
                                  WebSocketSession session) {
     }
@@ -61,7 +70,9 @@ public class WsSessionManager {
     /** callId -> 该调用被推送到的 connectionId，用于连接断开时快速失败 */
     private final ConcurrentMap<String, String> callOwners = new ConcurrentHashMap<>();
 
+    /** 构造 tool_call 帧。 */
     private final ObjectMapper objectMapper = new ObjectMapper();
+    /** 等待客户端回传工具结果的默认超时（毫秒）。 */
     private final long toolTimeoutMillis;
 
     public WsSessionManager(@Value("${agent.ws.tool-timeout-ms:60000}") long toolTimeoutMillis) {
@@ -77,16 +88,38 @@ public class WsSessionManager {
     public String register(WebSocketSession session,
                            String clientId,
                            String endUserId,
-                           String deviceId,
                            String sessionId) {
         String connectionId = session.getId();
         String uid = normalize(endUserId);
-        ConnectionInfo info = new ConnectionInfo(connectionId, clientId, uid, deviceId, sessionId, session);
+        String key = userKey(clientId, uid);
+
+        // 同一 (clientId, endUserId) 只保留最后一条连接，避免旧连接（旧版本客户端/残留进程）
+        // 抢到工具调用后不按新协议回包，导致网关一直等到超时。
+        Set<String> existing = userConnections.get(key);
+        if (existing != null) {
+            for (String oldId : new ArrayList<>(existing)) {
+                if (oldId.equals(connectionId)) {
+                    continue;
+                }
+                existing.remove(oldId);
+                ConnectionInfo old = connections.remove(oldId);
+                if (old != null) {
+                    failPendingCalls(oldId, "连接被同一用户的新连接替换");
+                    try {
+                        old.session().close();
+                    } catch (Exception ignored) {
+                        // 旧连接关闭失败不影响新连接
+                    }
+                }
+            }
+        }
+
+        ConnectionInfo info = new ConnectionInfo(connectionId, clientId, uid, sessionId, session);
         connections.put(connectionId, info);
-        userConnections.computeIfAbsent(userKey(clientId, uid), ignored -> ConcurrentHashMap.newKeySet())
+        userConnections.computeIfAbsent(key, ignored -> ConcurrentHashMap.newKeySet())
                 .add(connectionId);
         System.out.println("[WsSessionManager] 移动端连接建立 " + connectionId
-                + "，clientId=" + clientId + "，endUserId=" + uid + "，deviceId=" + deviceId);
+                + "，clientId=" + clientId + "，endUserId=" + uid);
         return connectionId;
     }
 
@@ -106,6 +139,15 @@ public class WsSessionManager {
                 userConnections.remove(key);
             }
         }
+        failPendingCalls(connectionId, "移动端客户端连接已断开: " + connectionId);
+        System.out.println("[WsSessionManager] 移动端连接断开 " + connectionId
+                + "，clientId=" + info.clientId() + "，endUserId=" + info.endUserId());
+    }
+
+    /**
+     * 让某个连接上未完成的工具调用立即失败，避免 Agent 无限等待。
+     */
+    private void failPendingCalls(String connectionId, String reason) {
         callOwners.entrySet().stream()
                 .filter(entry -> connectionId.equals(entry.getValue()))
                 .map(Map.Entry::getKey)
@@ -113,16 +155,9 @@ public class WsSessionManager {
                 .forEach(callId -> {
                     CompletableFuture<String> future = pendingCalls.get(callId);
                     if (future != null) {
-                        future.completeExceptionally(
-                                new IllegalStateException("移动端客户端连接已断开: " + connectionId));
+                        future.completeExceptionally(new IllegalStateException(reason));
                     }
                 });
-        System.out.println("[WsSessionManager] 移动端连接断开 " + connectionId
-                + "，clientId=" + info.clientId() + "，endUserId=" + info.endUserId());
-    }
-
-    public int connectionCount() {
-        return connections.size();
     }
 
     // ── 工具调用 ──
@@ -132,35 +167,45 @@ public class WsSessionManager {
      *
      * @return 客户端返回的工具结果（JSON 文本）
      */
-    public String invoke(String clientId,
-                         String endUserId,
-                         String sessionId,
+    public String invoke(ToolCallContext context,
                          String toolName,
                          Map<String, Object> arguments) {
-        ConnectionInfo target = resolve(clientId, endUserId, sessionId);
-        String callId = UUID.randomUUID().toString();
+        ConnectionInfo target = resolve(context.clientId(), context.endUserId(), context.sessionId());
+        String callId = context.callId();
         CompletableFuture<String> future = new CompletableFuture<>();
         pendingCalls.put(callId, future);
         callOwners.put(callId, target.connectionId());
 
-        ObjectNode message = objectMapper.createObjectNode();
-        message.put("type", "tool_call");
-        message.put("callId", callId);
-        if (sessionId != null && !sessionId.isBlank()) {
-            message.put("sessionId", sessionId);
+        ObjectNode envelope = objectMapper.createObjectNode();
+        envelope.put("v", "0.1");
+        envelope.put("id", callId);
+        envelope.put("type", "tool_call");
+        ObjectNode message = envelope.putObject("payload");
+        message.put("clientId", context.clientId());
+        message.put("endUserId", context.endUserId());
+        if (context.sessionId() != null && !context.sessionId().isBlank()) {
+            message.put("sessionId", context.sessionId());
         }
+        if (context.chatId() != null && !context.chatId().isBlank()) {
+            message.put("chatId", context.chatId());
+        }
+        message.put("callId", callId);
         message.put("tool", toolName);
-        message.set("arguments", toJsonObject(arguments));
+        message.set("arguments", objectMapper.valueToTree(
+                arguments == null ? Map.of() : arguments));
+        message.put("deadlineMs", context.deadlineMs());
 
         try {
-            send(target.session(), message);
+            send(target.session(), envelope);
             System.out.println("[WsSessionManager] 推送工具调用 " + toolName + " 到连接 "
-                    + target.connectionId() + "，callId=" + callId + "，参数: " + arguments);
-            String result = future.get(toolTimeoutMillis, TimeUnit.MILLISECONDS);
+                    + target.connectionId() + "，callId=" + callId
+                    + "，chatId=" + context.chatId() + "，参数: " + arguments);
+            String result = future.get(Math.max(1000, context.deadlineMs()), TimeUnit.MILLISECONDS);
             System.out.println("[WsSessionManager] 收到工具结果 callId=" + callId + ": " + result);
             return result;
         } catch (TimeoutException e) {
-            throw new IllegalStateException("等待移动端工具执行结果超时(" + toolTimeoutMillis + "ms): " + toolName);
+            throw new IllegalStateException("等待移动端工具执行结果超时("
+                    + context.deadlineMs() + "ms): " + toolName);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("等待移动端工具执行结果被中断: " + toolName, e);
@@ -223,9 +268,9 @@ public class WsSessionManager {
         if (candidates.size() == 1) {
             return candidates.get(0);
         }
-        throw new IllegalStateException("同一终端用户存在多条移动端连接，无法确定目标设备"
+        throw new IllegalStateException("同一终端用户存在多条移动端连接，无法确定目标连接"
                 + "(clientId=" + clientId + "，endUserId=" + normalize(endUserId)
-                + ")，请为会话绑定 sessionId 或指定 deviceId");
+                + ")，请为会话绑定 sessionId");
     }
 
     private void send(WebSocketSession session, ObjectNode message) {
@@ -241,14 +286,6 @@ public class WsSessionManager {
         } catch (IOException e) {
             throw new IllegalStateException("向移动端推送消息失败: " + e.getMessage(), e);
         }
-    }
-
-    private ObjectNode toJsonObject(Map<String, Object> arguments) {
-        ObjectNode node = objectMapper.createObjectNode();
-        if (arguments != null) {
-            arguments.forEach((key, value) -> node.put(key, value == null ? null : String.valueOf(value)));
-        }
-        return node;
     }
 
     private String toResultText(JsonNode result) {

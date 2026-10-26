@@ -2,6 +2,9 @@
 
 > 主题：Agent 是怎么知道客户端有哪些工具的、又是怎么调用这些工具的
 > 关联文档：[agent-middleware-design.md](./agent-middleware-design.md)
+>
+> **历史说明**：本文记录的是早期 `ToolRegistry` / `parameters` / 每工具 `callbackUrl` 的方案。
+> 当前实现已改为 `ClientRegistry` + `inputSchema` + 统一 CAP 信封，接入请看 [client-integration.md](./client-integration.md)。
 
 ---
 

@@ -3,10 +3,8 @@ package com.agent.demo.clientagent.agent_adaptor.impl;
 import com.agent.demo.clientagent.agent_adaptor.AgentAdaptor;
 import com.agent.demo.clientagent.core.AgentRequest;
 import com.agent.demo.clientagent.core.AgentSessionStore;
-import com.agent.demo.clientagent.core.AgentSession;
 import com.agent.demo.clientagent.core.AgentResponse;
-import com.agent.demo.clientagent.core.AgentResponseType;
-import com.agent.demo.clientagent.core.Message;
+import com.agent.demo.clientagent.core.ToolCallContext;
 import com.agent.demo.clientagent.client_registry.ClientRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
@@ -35,6 +33,7 @@ public class SelfAgentAdaptor implements AgentAdaptor {
      * 会话历史由中间件持有，只把本次决策需要的上下文传给Agent。
      */
     public record BrainChatRequest(String clientId,
+                                   String endUserId,
                                    String sessionId,
                                    boolean newSession,
                                    String userPrompt,
@@ -54,11 +53,17 @@ public class SelfAgentAdaptor implements AgentAdaptor {
     private static final String TYPE_TOOL_CALL = "CLIENT_TOOL_CALL";
     private static final String TYPE_FINAL_OUTPUT = "FINAL_OUTPUT";
 
+    /** 会话归属：中间件持有，Brain 只做单次决策。 */
     private final AgentSessionStore sessionStore;
+    /** 客户端工具目录与路由。 */
     private final ClientRegistry clientRegistry;
+    /** 调用 Brain HTTP 接口。 */
     private final RestClient restClient = RestClient.create();
+    /** AgentBrain 服务地址。 */
     private final String baseUrl;
+    /** AgentBrain 决策接口路径。 */
     private final String chatPath;
+    /** 单轮对话允许的最大工具调用轮数，防止死循环。 */
     private final int maxSteps;
 
     public SelfAgentAdaptor(AgentSessionStore sessionStore,
@@ -103,28 +108,23 @@ public class SelfAgentAdaptor implements AgentAdaptor {
     public AgentResponse chat(AgentRequest request) {
         String clientId = request.clientId();
         boolean newSession = request.sessionId() == null || request.sessionId().isBlank();
-        String localSessionId = sessionStore.resolveSessionId(clientId, request.sessionId());
+        String localSessionId = sessionStore.resolveSessionId(
+                clientId, request.endUserId(), request.sessionId());
         AgentSessionStore.SessionState state =
-                sessionStore.getOrCreate(name(), clientId, localSessionId);
-        AgentSession agentSession = state.brainSession();
-        agentSession.addMessage(new Message("user", request.userPrompt()));
+                sessionStore.getOrCreate(name(), clientId, request.endUserId(), localSessionId);
 
         String currentInput = request.userPrompt();
         for (int step = 0; step < maxSteps; step++) {
             boolean firstStepOfNewSession = step == 0 && newSession;
             BrainChatResponse response = callBrain(new BrainChatRequest(
-                    clientId, localSessionId, firstStepOfNewSession, currentInput, request.clientPrompt()));
+                    clientId, request.endUserId(), localSessionId,
+                    firstStepOfNewSession, currentInput, request.clientPrompt()));
 
             if (TYPE_FINAL_OUTPUT.equals(response.type())) {
                 String output = response.output() == null ? "" : response.output();
-                agentSession.addMessage(new Message("assistant", output));
                 System.out.println("[Adaptor][self][client=" + clientId
                         + ",session=" + localSessionId + "] Agent Loop结束");
-                AgentResponse result = new AgentResponse();
-                result.setBrainSession(agentSession);
-                result.setResultType(AgentResponseType.FINAL_OUTPUT);
-                result.setOutput(output);
-                return result;
+                return new AgentResponse(localSessionId, output);
             }
 
             if (!TYPE_TOOL_CALL.equals(response.type())) {
@@ -135,10 +135,11 @@ public class SelfAgentAdaptor implements AgentAdaptor {
                     + ",session=" + localSessionId + "] Agent请求调用客户端工具: "
                     + response.toolName() + "，参数: " + response.toolParameters());
             // 工具调用由中间件路由到客户端执行，执行结果再回传给Agent继续决策
+            // chatId 标识本轮对话，callId 标识本次工具调用，二者共同支撑多工具/多轮协议
+            ToolCallContext callContext = clientRegistry.newContext(
+                    clientId, request.endUserId(), localSessionId, request.chatId());
             String toolResult = clientRegistry.execute(
-                    clientId, request.endUserId(), localSessionId,
-                    response.toolName(), toArguments(response.toolParameters()));
-            agentSession.addMessage(new Message("tool", toolResult));
+                    callContext, response.toolName(), toArguments(response.toolParameters()));
             currentInput = toolResult;
         }
         throw new IllegalStateException("自研Agent超过最大工具调用轮数(" + maxSteps + ")");

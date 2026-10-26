@@ -10,12 +10,12 @@ import java.util.Map;
  *
  * @param name         工具名（同一 clientId 内唯一）
  * @param description  给模型看的工具描述
- * @param parameters   参数名 -> 类型
  * @param callbackPath 工具级回调路径（可选，缺省使用客户端的 defaultCallbackPath）
+ * @param inputSchema  标准 JSON Schema，描述参数、必填项和参数含义
  */
 public record ToolDefinition(
         String name,
         String description,
-        Map<String, String> parameters,
-        String callbackPath) {
+        String callbackPath,
+        Map<String, Object> inputSchema) {
 }

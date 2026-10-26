@@ -15,6 +15,7 @@ import java.util.Map;
 @RestController
 public class AgentController {
 
+    /** Agent 适配器注册表。 */
     private final AgentAdaptorRegistry registry;
 
     public AgentController(AgentAdaptorRegistry registry) {
@@ -23,8 +24,18 @@ public class AgentController {
 
     /**
      * GET /agents
-     * 查询平台当前可用的 Agent 列表，供客户端接入前做能力发现。
-     * 返回：default 为默认适配器名；agents 为每个 Agent 的名称、描述、能力标签、是否可用及不可用原因。
+     *
+     * <p>作用：查询平台当前可用的 Agent，供客户端接入前做能力发现。
+     *
+     * <p>入参：无。
+     *
+     * <p>返回 200 JSON：
+     * <ul>
+     *   <li>{@code default}：默认适配器名，请求 /chat 未指定 agent 时使用；</li>
+     *   <li>{@code agents[]}：每个 Agent 的
+     *       {@code name}、{@code description}、{@code capabilities}、
+     *       {@code available}；不可用时带 {@code unavailableReason}。</li>
+     * </ul>
      */
     @GetMapping("/agents")
     public Map<String, Object> list() {

@@ -3,10 +3,7 @@ package com.agent.demo.clientagent.agent_adaptor.impl;
 import com.agent.demo.clientagent.agent_adaptor.AgentAdaptor;
 import com.agent.demo.clientagent.core.AgentRequest;
 import com.agent.demo.clientagent.core.AgentSessionStore;
-import com.agent.demo.clientagent.core.AgentSession;
 import com.agent.demo.clientagent.core.AgentResponse;
-import com.agent.demo.clientagent.core.AgentResponseType;
-import com.agent.demo.clientagent.core.Message;
 import com.coze.openapi.client.chat.CreateChatReq;
 import com.coze.openapi.client.chat.model.ChatEvent;
 import com.coze.openapi.client.chat.model.ChatEventType;
@@ -25,11 +22,15 @@ import java.util.List;
 @Component
 public class CozeAgentAdaptor implements AgentAdaptor {
 
+    /** 扣子 API Token；为空时适配器不可用。 */
     private final String apiToken;
+    /** 扣子 Bot ID。 */
     private final String botId;
+    /** 扣子 API 地址。 */
     private final String baseUrl;
-    // 未配置token时不初始化，避免应用启动失败
+    /** 延迟初始化：未配置 token 时不创建客户端，避免应用启动失败。 */
     private volatile CozeAPI coze;
+    /** 会话归属，保存 conversationId 映射。 */
     private final AgentSessionStore sessionStore;
 
     public CozeAgentAdaptor(@Value("${coze.api-token:}") String apiToken,
@@ -87,13 +88,12 @@ public class CozeAgentAdaptor implements AgentAdaptor {
 
     @Override
     public AgentResponse chat(AgentRequest request) {
-        String localSessionId = sessionStore.resolveSessionId(request.clientId(), request.sessionId());
+        String localSessionId = sessionStore.resolveSessionId(
+                request.clientId(), request.endUserId(), request.sessionId());
         AgentSessionStore.SessionState state =
-                sessionStore.getOrCreate(name(), request.clientId(), localSessionId);
-        AgentSession agentSession = state.brainSession();
-        agentSession.addMessage(new Message("user", request.userPrompt()));
+                sessionStore.getOrCreate(name(), request.clientId(), request.endUserId(), localSessionId);
 
-        // coze的Message与本项目的Message同名，用全限定名区分
+        // 使用 Coze SDK 的 Message 构造用户消息
         var userMessage = com.coze.openapi.client.connversations.message.model.Message
                 .buildUserQuestionText(request.userPrompt());
         CreateChatReq.CreateChatReqBuilder<?, ?> reqBuilder = CreateChatReq.builder()
@@ -119,11 +119,6 @@ public class CozeAgentAdaptor implements AgentAdaptor {
             }
         }
 
-        agentSession.addMessage(new Message("assistant", answer.toString()));
-        AgentResponse result = new AgentResponse();
-        result.setBrainSession(agentSession);
-        result.setResultType(AgentResponseType.FINAL_OUTPUT);
-        result.setOutput(answer.toString());
-        return result;
+        return new AgentResponse(localSessionId, answer.toString());
     }
 }

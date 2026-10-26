@@ -9,12 +9,14 @@ package com.agent.demo.clientagent.core;
  * @param userPrompt   用户输入，或客户端工具的执行结果
  * @param clientPrompt 客户端定制的系统提示词
  * @param sessionId    会话ID，为空表示新建会话
+ * @param chatId       本轮对话ID，用于关联本轮的所有工具调用
  */
 public record AgentRequest(String clientId,
                            String endUserId,
                            String userPrompt,
                            String clientPrompt,
-                           String sessionId) {
+                           String sessionId,
+                           String chatId) {
 
     public AgentRequest {
         if (userPrompt == null || userPrompt.isBlank()) {

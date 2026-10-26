@@ -1,6 +1,12 @@
 package com.agent.demo.clientagent.client_registry;
 
+import com.agent.demo.clientagent.core.ToolCallContext;
 import com.agent.demo.clientagent.ws.WsSessionManager;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -12,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -31,17 +38,36 @@ import java.util.concurrent.ConcurrentMap;
 @Component
 public class ClientRegistry {
 
+    /** 客户端注册后的状态；当前没有离线检测，注册即 ONLINE。 */
     private static final String STATUS_ONLINE = "ONLINE";
-    private static final String STATUS_OFFLINE = "OFFLINE";
 
     /** clientId -> 客户端注册信息 */
     private final ConcurrentMap<String, ClientRegistration> clients = new ConcurrentHashMap<>();
 
+    /** 调用 SERVER 客户端 HTTP 回调。 */
     private final RestClient restClient = RestClient.create();
+    /** 构造 tool_call/tool_result 信封。 */
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    /** MOBILE 客户端的 WS 推送/等待结果。 */
     private final WsSessionManager wsSessionManager;
+    /** 等待客户端工具结果的默认超时（毫秒）。 */
+    private final long toolTimeoutMs;
 
-    public ClientRegistry(WsSessionManager wsSessionManager) {
+    public ClientRegistry(WsSessionManager wsSessionManager,
+                          @Value("${agent.tool.timeout-ms:60000}") long toolTimeoutMs) {
         this.wsSessionManager = wsSessionManager;
+        this.toolTimeoutMs = Math.max(1000, toolTimeoutMs);
+    }
+
+    /**
+     * 为一次工具调用创建上下文：chatId 标识本轮，callId 标识本次调用。
+     */
+    public ToolCallContext newContext(String clientId,
+                                      String endUserId,
+                                      String sessionId,
+                                      String chatId) {
+        return new ToolCallContext(clientId, endUserId, sessionId, chatId,
+                UUID.randomUUID().toString(), toolTimeoutMs);
     }
 
     // ── 客户端注册 ──
@@ -73,17 +99,18 @@ public class ClientRegistry {
         List<ToolDefinition> normalized = new ArrayList<>();
         for (ToolDefinition definition : definitions) {
             String name = requireToolName(definition.name());
-            Map<String, String> parameters = definition.parameters() == null
-                    ? Map.of() : Map.copyOf(definition.parameters());
             String callbackPath = definition.callbackPath();
             if (callbackPath != null && callbackPath.isBlank()) {
                 callbackPath = null;
             }
+            Map<String, Object> inputSchema = definition.inputSchema() == null
+                    ? Map.of("type", "object", "additionalProperties", false)
+                    : Map.copyOf(definition.inputSchema());
             normalized.add(new ToolDefinition(
                     name,
                     definition.description() == null ? "" : definition.description(),
-                    parameters,
-                    callbackPath));
+                    callbackPath,
+                    inputSchema));
         }
 
         ClientRegistration registration = new ClientRegistration(
@@ -111,15 +138,6 @@ public class ClientRegistry {
     public List<ToolDefinition> listTools(String clientId) {
         ClientRegistration client = clients.get(requireClientId(clientId));
         return client == null ? List.of() : client.tools();
-    }
-
-    /**
-     * 管理视角的全量工具列表
-     */
-    public List<ToolDefinition> listAllTools() {
-        return clients.values().stream()
-                .flatMap(client -> client.tools().stream())
-                .toList();
     }
 
     public Optional<ToolDefinition> getTool(String clientId, String name) {
@@ -182,22 +200,25 @@ public class ClientRegistry {
      * @param arguments 工具参数
      * @return 工具执行结果
      */
-    public String execute(String clientId,
-                          String endUserId,
-                          String sessionId,
+    public String execute(ToolCallContext context,
                           String toolName,
                           Map<String, Object> arguments) {
-        String cid = requireClientId(clientId);
+        String cid = requireClientId(context.clientId());
         ClientRegistration client = getClient(cid)
                 .orElseThrow(() -> new IllegalArgumentException("客户端未注册: " + cid));
 
         return switch (client.clientType()) {
-            case SERVER -> executeViaHttp(client, toolName, arguments);
-            case MOBILE -> executeViaWebSocket(cid, endUserId, sessionId, toolName, arguments);
+            case SERVER -> executeViaHttp(context, client, toolName, arguments);
+            case MOBILE -> executeViaWebSocket(context, toolName, arguments);
         };
     }
 
-    private String executeViaHttp(ClientRegistration client,
+    /**
+     * SERVER 客户端：把 tool_call 信封 POST 到 baseCallbackUrl + callbackPath，
+     * 读取响应里的 tool_result 信封。
+     */
+    private String executeViaHttp(ToolCallContext context,
+                                  ClientRegistration client,
                                   String toolName,
                                   Map<String, Object> arguments) {
         ToolDefinition tool = getTool(client.clientId(), toolName)
@@ -206,19 +227,58 @@ public class ClientRegistry {
         String callbackUrl = client.resolveCallbackUrl(tool);
         Map<String, Object> args = arguments == null ? Map.of() : arguments;
 
+        ObjectNode envelope = objectMapper.createObjectNode();
+        envelope.put("v", "0.1");
+        envelope.put("id", context.callId());
+        envelope.put("type", "tool_call");
+        ObjectNode payload = envelope.putObject("payload");
+        payload.put("clientId", client.clientId());
+        payload.put("endUserId", context.endUserId());
+        payload.put("sessionId", context.sessionId());
+        payload.put("chatId", context.chatId());
+        payload.put("callId", context.callId());
+        payload.put("tool", toolName);
+        payload.set("arguments", objectMapper.valueToTree(args));
+        payload.put("deadlineMs", context.deadlineMs());
+
         System.out.println("[ClientRegistry] 回调客户端 " + client.clientId()
-                + " 执行 " + toolName + "，地址: " + callbackUrl + "，参数: " + args);
+                + " 执行 " + toolName + "，callId=" + context.callId()
+                + "，chatId=" + context.chatId() + "，地址: " + callbackUrl);
         try {
-            String result = restClient.post()
+            String body = objectMapper.writeValueAsString(envelope);
+            String response = restClient.post()
                     .uri(callbackUrl)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(Map.of("clientId", client.clientId(), "tool", toolName, "arguments", args))
+                    .body(body)
                     .retrieve()
                     .body(String.class);
-            System.out.println("[ClientRegistry] 客户端 " + client.clientId() + " 返回结果: " + result);
-            return result;
+            System.out.println("[ClientRegistry] 客户端 " + client.clientId() + " 返回结果: " + response);
+            return extractToolResult(response);
         } catch (RestClientException e) {
             throw new IllegalStateException("回调客户端工具失败(" + callbackUrl + "): " + e.getMessage(), e);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("序列化工具调用失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 解析客户端的 tool_result 信封。
+     */
+    private String extractToolResult(String response) {
+        try {
+            JsonNode node = objectMapper.readTree(response);
+            if (!"tool_result".equals(node.path("type").asText())) {
+                throw new IllegalStateException("客户端返回了非 tool_result 响应: " + response);
+            }
+            JsonNode payload = node.path("payload");
+            if ("error".equals(payload.path("status").asText())) {
+                throw new IllegalStateException(payload.path("error").path("message")
+                        .asText("工具执行失败"));
+            }
+            JsonNode result = payload.get("result");
+            return result == null ? "" : (result.isTextual() ? result.asText() : result.toString());
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("解析客户端工具结果失败: " + e.getMessage(), e);
         }
     }
 
@@ -226,15 +286,13 @@ public class ClientRegistry {
      * MOBILE 客户端工具执行：通过 WebSocket 推送到 session 绑定的连接，并等待客户端回传结果。
      * 路由按 (clientId, endUserId, sessionId) 隔离，保证不同终端用户不会串号。
      */
-    private String executeViaWebSocket(String clientId,
-                                       String endUserId,
-                                       String sessionId,
+    private String executeViaWebSocket(ToolCallContext context,
                                        String toolName,
                                        Map<String, Object> arguments) {
-        getTool(clientId, toolName)
+        getTool(context.clientId(), toolName)
                 .orElseThrow(() -> new IllegalArgumentException(
-                        "客户端 " + clientId + " 未注册工具: " + toolName));
-        return wsSessionManager.invoke(clientId, endUserId, sessionId, toolName, arguments);
+                        "客户端 " + context.clientId() + " 未注册工具: " + toolName));
+        return wsSessionManager.invoke(context, toolName, arguments);
     }
 
     // ── 校验工具 ──

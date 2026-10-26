@@ -1,41 +1,41 @@
 package com.agent.demo.agentclient.client;
 
+import com.agent.demo.agentsdk.AgentClient;
+import com.agent.demo.agentsdk.Transport;
+import com.agent.demo.agentclient.tool.ClientTool;
+import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
-import org.springframework.http.MediaType;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
-import org.springframework.web.util.UriComponentsBuilder;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 自研客户端：
- * 1. 启动后把本地工具注册到中间件（失败会定时重试，解决客户端先于中间件启动的问题）；
- * 2. 接收中间件的工具执行回调，在本地执行工具；
- * 3. 作为客户端向中间件 /chat 发起对话，中间件再调用自研Agent服务。
+ * 自研 SERVER 客户端：只声明工具和业务入口，注册/对话/工具分发全部交给 SDK。
+ *
+ * <p>与移动端 {@link MobileClient} 使用同一个
+ * {@link AgentClient}，唯一差别是 {@link Transport#HTTP_CALLBACK}：
+ * 网关通过 HTTP 回调下发 tool_call，SDK 负责解析、执行、生成 tool_result。
  */
 @Component
 public class Client {
 
+    /** SDK 实例：负责注册、HTTP 回调、工具分发和对话。 */
+    private final AgentClient agentClient;
+    /** 客户端唯一标识。 */
     private final String clientId;
-    private final String middlewareUrl;
-    private final String callbackBaseUrl;
-    private final String clientPrompt;
+    /** 本地工具：name -> 实现。 */
     private final Map<String, ClientTool> clientTools;
-    private final RestClient restClient = RestClient.create();
 
-    /** 客户端本地维护的用户数据，仅用于演示 */
+    /** 客户端本地维护的用户数据，仅用于演示；真实客户端应按 endUserId 隔离。 */
     public static String name = "张三";
-
-    private volatile boolean registered;
 
     public Client(List<ClientTool> clientTools,
                   @Value("${agent-client.client-id:agent-client}") String clientId,
+                  @Value("${agent-client.end-user-id:demo-user}") String endUserId,
                   @Value("${agent-client.middleware-url:http://localhost:8080}") String middlewareUrl,
                   @Value("${agent-client.callback-base-url:http://localhost:8082}") String callbackBaseUrl,
                   @Value("${agent-client.client-prompt:客户端定制化system prompt}") String clientPrompt) {
@@ -43,82 +43,52 @@ public class Client {
         clientTools.forEach(tool -> tools.put(tool.getName(), tool));
         this.clientTools = Map.copyOf(tools);
         this.clientId = clientId;
-        this.middlewareUrl = trimTrailingSlash(middlewareUrl);
-        this.callbackBaseUrl = trimTrailingSlash(callbackBaseUrl);
-        this.clientPrompt = clientPrompt;
+
+        AgentClient.Builder builder = AgentClient.builder()
+                .gateway(middlewareUrl)
+                .transport(Transport.HTTP_CALLBACK)
+                .callbackBaseUrl(callbackBaseUrl)
+                .clientId(clientId)
+                .endUserId(endUserId)
+                .clientPrompt(clientPrompt);
+        for (ClientTool tool : clientTools) {
+            builder.tool(tool.getName(), tool.getDescription(), tool.getInputSchema(),
+                    arguments -> executeTool(tool.getName(), arguments));
+        }
+        this.agentClient = builder.build();
     }
 
     /**
-     * 启动即注册；失败时由定时任务重试
+     * 启动即注册；失败由 SDK 在后台重试。
      */
     @EventListener(ApplicationReadyEvent.class)
-    public void registerOnStartup() {
-        tryRegister();
-    }
-
-    @Scheduled(fixedDelayString = "${agent-client.register-retry-ms:5000}")
-    public void retryRegister() {
-        if (!registered) {
-            tryRegister();
-        }
-    }
-
-    private void tryRegister() {
-        List<Map<String, Object>> tools = clientTools.values().stream()
-                .map(tool -> Map.<String, Object>of(
-                        "name", tool.getName(),
-                        "description", tool.getDescription(),
-                        "parameters", tool.getParameters()))
-                .toList();
+    public void onStartup() {
         try {
-            // 调用 AgentAdaptor 的 /clients/register 接口，上报客户端类型、回调基地址与工具清单
-            // SERVER 客户端：baseCallbackUrl + defaultCallbackPath 拼接出工具回调地址
-            String response = restClient.post()
-                    .uri(middlewareUrl + "/clients/register")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(Map.of(
-                            "clientId", clientId,
-                            "clientType", "SERVER",
-                            "baseCallbackUrl", callbackBaseUrl,
-                            "defaultCallbackPath", "/client/tools/execute",
-                            "clientPrompt", clientPrompt == null ? "" : clientPrompt,
-                            "tools", tools))
-                    .retrieve()
-                    .body(String.class);
-            registered = true;
-            System.out.println("[AgentClient] 客户端 " + clientId + " 注册工具完成: " + response);
+            agentClient.connect();
+            System.out.println("[AgentClient] SERVER 客户端就绪: clientId=" + clientId);
         } catch (Exception e) {
-            System.out.println("[AgentClient] 注册工具失败，稍后重试: " + e.getMessage());
+            System.out.println("[AgentClient] 初始化失败，SDK 会自动重试: " + e.getMessage());
         }
     }
 
     /**
-     * 客户端向中间件发起对话，返回中间件的原始JSON响应
+     * 客户端向中间件发起对话，返回 final 信封 JSON。
      */
     public String chat(String prompt, String agent, String sessionId) {
-        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(middlewareUrl)
-                .path("/chat")
-                .queryParam("clientId", clientId)
-                .queryParam("prompt", prompt);
-        if (agent != null && !agent.isBlank()) {
-            builder.queryParam("agent", agent);
-        }
-        if (sessionId != null && !sessionId.isBlank()) {
-            builder.queryParam("sessionId", sessionId);
-        }
-        if (clientPrompt != null && !clientPrompt.isBlank()) {
-            builder.queryParam("clientPrompt", clientPrompt);
-        }
-        return restClient.get()
-                .uri(builder.build().encode().toUri())
-                .retrieve()
-                .body(String.class);
+        return agentClient.chat(prompt, agent, sessionId);
     }
 
     /**
-     * 在客户端本地执行工具，供中间件的工具回调接口调用
+     * HTTP 回调入口：中间件把 tool_call 信封 POST 过来，SDK 解析并返回 tool_result。
      */
-    public Map<String, String> executeTool(String toolName, Map<String, String> parameters) {
+    public String handleToolCall(String body) {
+        return agentClient.handleToolCall(body);
+    }
+
+    /**
+     * 客户端本地执行工具，供 SDK 的 ToolHandler 调用。
+     */
+    public Map<String, Object> executeTool(String toolName, Map<String, Object> parameters) {
         ClientTool tool = clientTools.get(toolName);
         if (tool == null) {
             throw new IllegalArgumentException("客户端 " + clientId + " 未提供工具: " + toolName);
@@ -126,7 +96,8 @@ public class Client {
         return tool.execute(parameters == null ? Map.of() : parameters);
     }
 
-    private String trimTrailingSlash(String url) {
-        return url != null && url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
+    @PreDestroy
+    public void close() {
+        agentClient.close();
     }
 }

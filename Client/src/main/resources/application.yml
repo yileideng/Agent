@@ -3,15 +3,18 @@ spring:
     name: AgentClient
 
 server:
-  port: 8082
+  port: 8083
 
 agent-client:
   # 客户端唯一标识，注册工具和发起对话时都使用它
   client-id: agent-client
+  # 终端用户标识（多用户隔离）；单用户演示固定为 demo-user
+  end-user-id: demo-user
   # 中间件地址
   middleware-url: http://localhost:8080
-  # 本客户端对外地址，供中间件回调执行工具
-  callback-base-url: http://localhost:8082
+  # 本客户端对外地址，供中间件回调执行工具。
+  # 默认跟随 server.port，避免改了端口却忘了改回调地址，导致网关回调到旧进程。
+  callback-base-url: http://localhost:${server.port:8082}
   # 注入给 Agent 的客户端定制系统提示词
   client-prompt: 客户端定制化system prompt
   # 注册失败后的重试间隔

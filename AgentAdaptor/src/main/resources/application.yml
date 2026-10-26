@@ -13,7 +13,10 @@ agent:
     chat-path: /v1/brain/chat
     # 单轮对话内允许的客户端工具调用最大轮数
     max-steps: 5
-  # 会话状态由中间件持有，按 (adaptor, clientId, sessionId) 隔离，带TTL清理
+  # 客户端工具调用的默认超时（毫秒）
+  tool:
+    timeout-ms: 60000
+  # 会话状态由中间件持有，按 (adaptor, clientId, endUserId, sessionId) 隔离，带TTL清理
   session:
     ttl-minutes: 120
     cleanup-interval-ms: 600000

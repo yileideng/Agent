@@ -3,10 +3,7 @@ package com.agent.demo.clientagent.agent_adaptor.impl;
 import com.agent.demo.clientagent.agent_adaptor.AgentAdaptor;
 import com.agent.demo.clientagent.core.AgentRequest;
 import com.agent.demo.clientagent.core.AgentSessionStore;
-import com.agent.demo.clientagent.core.AgentSession;
 import com.agent.demo.clientagent.core.AgentResponse;
-import com.agent.demo.clientagent.core.AgentResponseType;
-import com.agent.demo.clientagent.core.Message;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -42,21 +39,31 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class CliAgentAdaptor implements AgentAdaptor {
 
+    /** CLI 命令（如 qwen / claude）。 */
     private final String command;
+    /** 可选：Node 目录，前置到子进程 PATH。 */
     private final String nodePath;
-    // 非交互模式下的显式鉴权参数，留空则沿用CLI本地已登录的凭证
+    /** 非交互鉴权方式；留空则沿用 CLI 本地已登录凭证。 */
     private final String authType;
+    /** 非交互鉴权 API Key。 */
     private final String apiKey;
+    /** 模型 OpenAI 兼容端点。 */
     private final String baseUrl;
+    /** 模型名。 */
     private final String model;
-    // 外部客户端工具的MCP服务地址(基地址)，实际使用时会拼接 /{clientId}
+    /** 外部客户端工具的 MCP 服务基地址，实际使用时会拼接 /{clientId}。 */
     private final String mcpUrl;
+    /** 写入 mcp-config 的 MCP server 名称。 */
     private final String mcpServerName;
+    /** 单次 CLI 调用超时秒数。 */
     private final long timeoutSeconds;
+    /** 每会话工作目录根路径；为空时用系统临时目录。 */
     private final String workDir;
-    // 追加到CLI系统提示词的语言约束，CLI默认系统提示词是英文，需显式要求中文输出
+    /** 追加到 CLI 系统提示词的语言约束。 */
     private final String languagePrompt;
+    /** 会话归属。 */
     private final AgentSessionStore sessionStore;
+    /** 构造 mcp-config 和解析 stream-json。 */
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public CliAgentAdaptor(@Value("${agent.cli.command:qwen}") String command,
@@ -113,14 +120,15 @@ public class CliAgentAdaptor implements AgentAdaptor {
     @Override
     public AgentResponse chat(AgentRequest request) {
         String clientId = request.clientId();
-        String localSessionId = sessionStore.resolveSessionId(clientId, request.sessionId());
-        AgentSessionStore.SessionState state = sessionStore.getOrCreate(name(), clientId, localSessionId);
-        AgentSession agentSession = state.brainSession();
-        agentSession.addMessage(new Message("user", request.userPrompt()));
+        String localSessionId = sessionStore.resolveSessionId(
+                clientId, request.endUserId(), request.sessionId());
+        AgentSessionStore.SessionState state = sessionStore.getOrCreate(
+                name(), clientId, request.endUserId(), localSessionId);
 
         // MCP 地址按客户端隔离：CLI 只会看到该客户端注册的工具
         // 同时透传 endUserId/sessionId，移动端(MOBILE)客户端才能被精确路由到对应连接
-        String clientMcpUrl = mcpUrlFor(clientId, request.endUserId(), localSessionId);
+        String clientMcpUrl = mcpUrlFor(
+                clientId, request.endUserId(), localSessionId, request.chatId());
         Path mcpConfig = null;
         if (clientMcpUrl != null) {
             mcpConfig = writeMcpConfig(clientMcpUrl);
@@ -191,12 +199,7 @@ public class CliAgentAdaptor implements AgentAdaptor {
             throw new IllegalStateException(command + " 执行失败(exit=" + exit + "): " + errBuf);
         }
 
-        agentSession.addMessage(new Message("assistant", answer.toString()));
-        AgentResponse result = new AgentResponse();
-        result.setBrainSession(agentSession);
-        result.setResultType(AgentResponseType.FINAL_OUTPUT);
-        result.setOutput(answer.toString());
-        return result;
+        return new AgentResponse(localSessionId, answer.toString());
     }
 
     private List<String> buildCommand(AgentRequest request, AgentSessionStore.SessionState state) {
@@ -315,10 +318,11 @@ public class CliAgentAdaptor implements AgentAdaptor {
     }
 
     /**
-     * 构造该会话专属的 MCP 地址：{mcp-url}/{clientId}?endUserId=..&sessionId=..
-     * clientId 决定可见工具范围，endUserId+sessionId 供中间件把 MOBILE 客户端的工具调用路由回具体连接
+     * 构造该会话专属的 MCP 地址：{mcp-url}/{clientId}?endUserId=..&sessionId=..&chatId=..
+     * clientId 决定可见工具范围；endUserId+sessionId+chatId 供中间件把工具调用
+     * 精确路由回具体连接/会话/本轮对话。
      */
-    private String mcpUrlFor(String clientId, String endUserId, String sessionId) {
+    private String mcpUrlFor(String clientId, String endUserId, String sessionId, String chatId) {
         if (mcpUrl == null || mcpUrl.isBlank()) {
             return null;
         }
@@ -335,6 +339,11 @@ public class CliAgentAdaptor implements AgentAdaptor {
         if (sessionId != null && !sessionId.isBlank()) {
             url.append(separator).append("sessionId=")
                     .append(URLEncoder.encode(sessionId, StandardCharsets.UTF_8));
+            separator = '&';
+        }
+        if (chatId != null && !chatId.isBlank()) {
+            url.append(separator).append("chatId=")
+                    .append(URLEncoder.encode(chatId, StandardCharsets.UTF_8));
         }
         return url.toString();
     }
