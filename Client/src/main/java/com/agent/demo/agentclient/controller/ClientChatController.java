@@ -2,6 +2,7 @@ package com.agent.demo.agentclient.controller;
 
 import com.agent.demo.agentclient.client.Client;
 import com.agent.demo.agentclient.client.MobileClient;
+import com.agent.demo.agentsdk.ChatStreamResult;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -50,6 +51,24 @@ public class ClientChatController {
     }
 
     /**
+     * GET /chat/stream
+     *
+     * <p>作用：示例 SERVER 客户端的流式入口。客户端通过 SDK 的 {@code chatStream}
+     * 接收 delta/thinking，并在客户端控制台实时打印。
+     *
+     * <p>入参同 {@code GET /chat}。
+     *
+     * <p>返回：流结束后的汇总 JSON（sessionId/chatId/agent/output）。
+     * 流式过程打印在客户端进程的控制台。
+     */
+    @GetMapping(value = "/chat/stream", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Map<String, Object> chatStream(@RequestParam String prompt,
+                                          @RequestParam(required = false) String agent,
+                                          @RequestParam(required = false) String sessionId) {
+        return streamResult(client.chatStream(prompt, agent, sessionId));
+    }
+
+    /**
      * GET /mobile/chat
      *
      * <p>作用：示例 MOBILE 客户端的用户入口。客户端通过 WebSocket 长连接接收工具调用，
@@ -73,6 +92,19 @@ public class ClientChatController {
     }
 
     /**
+     * GET /mobile/chat/stream
+     *
+     * <p>作用：示例 MOBILE 客户端的流式入口；delta/thinking 在客户端控制台实时打印，
+     * 工具调用仍走 WebSocket。
+     */
+    @GetMapping(value = "/mobile/chat/stream", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Map<String, Object> mobileChatStream(@RequestParam String prompt,
+                                                @RequestParam(required = false) String agent,
+                                                @RequestParam(required = false) String sessionId) {
+        return streamResult(mobileClient.chatStream(prompt, agent, sessionId));
+    }
+
+    /**
      * GET /mobile/status
      *
      * <p>作用：查看 MOBILE 客户端到中间件的 WebSocket 是否已连接，便于排障。
@@ -86,5 +118,14 @@ public class ClientChatController {
         Map<String, Object> status = new LinkedHashMap<>();
         status.put("connected", mobileClient.isConnected());
         return status;
+    }
+
+    private Map<String, Object> streamResult(ChatStreamResult result) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("sessionId", result.sessionId());
+        body.put("chatId", result.chatId());
+        body.put("agent", result.agent());
+        body.put("output", result.output());
+        return body;
     }
 }

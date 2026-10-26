@@ -346,7 +346,7 @@ qwen -p <prompt> --output-format stream-json \
 |---|---|
 | 会话必须可迁移 | 消息历史存中间件；Agent 侧 session ref 仅作加速，丢失可回放 |
 | 工具协议统一 | 只依赖 MCP，不依赖某个 CLI 私有能力 |
-| 输出统一 | 适配为统一事件模型（`delta` / `tool_call` / `final`） |
+| 输出统一 | 适配为统一事件模型（`delta` / `thinking` / `tool_call` / `final`） |
 | 降级 | Agent 故障时按租户配置切换备用 AgentProfile |
 
 ---
@@ -358,7 +358,7 @@ qwen -p <prompt> --output-format stream-json \
 | 接口 | 归属 | 说明 |
 |---|---|---|
 | `GET /agents` | 中间件 | Agent 能力发现：返回默认 Agent 及每个 Agent 的描述、能力标签、是否可用 |
-| `POST /chat` | 中间件 | CAP v0.1 对话入口：请求体 `{v,id,type:"chat",payload:{clientId,endUserId,sessionId?,prompt,agent?,clientPrompt?}}`；返回 `final` 信封（`sessionId/chatId/agent/output`） |
+| `POST /chat` | 中间件 | CAP v0.1 对话入口：请求体 `{v,id,type:"chat",payload:{clientId,endUserId,sessionId?,prompt,agent?,clientPrompt?}}`；`Accept: application/json` 返回 `final`，`Accept: text/event-stream` 返回 `delta/thinking/final/error` SSE |
 | `POST /v1/brain/chat` | BrainAgent | 自研 Agent 决策接口：入参 `clientId/endUserId/sessionId/newSession/userPrompt/clientPrompt`，返回 `CLIENT_TOOL_CALL`（含工具名与参数）或 `FINAL_OUTPUT` |
 | `GET /chat?prompt=&agent=&sessionId=` | Client | 自研客户端的用户入口，内部以 `POST /chat` 信封转发中间件，返回 `final` 信封 |
 | `POST /client/tools/execute` | Client | 工具回调端点；请求和响应都是 CAP 信封 |
@@ -418,7 +418,7 @@ qwen -p <prompt> --output-format stream-json \
 |---|---|---|
 | **P0（当前）** | 单租户 demo：Adapter + MCP + 注册回调 | 已验证链路 |
 | **P1** | 租户模型 + session token + 工具按租户隔离 + 注册鉴权 + 修静态状态 | 可支撑小红书、抖音两家接入 |
-| **P2** | 会话持久化 + SSE 流式 + 异步工具 + 审计限流 | 可用于生产预演 |
+| **P2** | 会话持久化 + 流式取消/背压 + 异步工具 + 审计限流 | 可用于生产预演 |
 | **P3** | CLI 沙箱池 + 多 Agent 路由/降级 + 可观测性完善 + HA | 对外商业化 |
 
 ---
@@ -438,7 +438,7 @@ qwen -p <prompt> --output-format stream-json \
 | 会话管理 | `AgentSessionStore` 统一持有，按 `(adaptor,clientId,sessionId)` 隔离，TTL 清理；`/chat` 支持 sessionId 多轮 | **60%** | 无持久化、无历史回放、换 Agent 时历史未回放 |
 | 数据隔离 | 无 | **0%** | 无 DB、无租户主键、无存储前缀 |
 | 运行时隔离 | 每会话独立工作目录、MCP 按客户端裁剪 | **30%** | CLI 仍以宿主进程运行，可读写宿主目录，无沙箱 |
-| 流式输出 | 同步返回全量结果 | **10%** | 无 SSE、无 delta 推送 |
+| 流式输出 | 支持 CAP SSE（`delta/thinking/final/error`）；CLI 逐事件，Self 仅 `final` | **65%** | 取消、背压、异步执行器未做 |
 | 异步长任务 | 工具调用同步 HTTP | **0%** | 无 pending/taskId 机制 |
 | 可观测性 | `System.out` 日志已带 clientId/sessionId | **20%** | 无 trace、无指标、无审计落库 |
 | 安全 | 注册/`/mcp` 均无鉴权；key 明文写 yml | **15%** | SSRF、越权、密钥管理全部缺失 |

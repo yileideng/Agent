@@ -2,6 +2,7 @@ package com.agent.demo.clientagent.agent_adaptor;
 
 import com.agent.demo.clientagent.core.AgentRequest;
 import com.agent.demo.clientagent.core.AgentResponse;
+import com.agent.demo.clientagent.core.AgentStreamSink;
 
 import java.util.List;
 
@@ -50,8 +51,25 @@ public interface AgentAdaptor {
     }
 
     /**
-     * 执行Agent对话，触发方是客户端。
+     * 执行Agent对话（阻塞版），触发方是客户端。
      * 会话状态由适配器层通过 AgentSessionStore 统一持有，Brain 只负责一次决策。
      */
     AgentResponse chat(AgentRequest request);
+
+    /**
+     * 流式执行 Agent 对话。
+     *
+     * <p>默认实现退化为“一次性 final”，保证不实现流式的适配器仍可用。
+     * 支持流式的适配器应覆盖本方法，把厂商事件逐条翻译成
+     * {@link AgentStreamSink#delta}/{@link AgentStreamSink#thinking} 和
+     * {@link AgentStreamSink#finish}，不能等整段回答收完再发。
+     */
+    default void chatStream(AgentRequest request, AgentStreamSink sink) {
+        try {
+            AgentResponse response = chat(request);
+            sink.finish(response.sessionId(), response.output());
+        } catch (Exception e) {
+            sink.error("AGENT_ERROR", e.getMessage());
+        }
+    }
 }

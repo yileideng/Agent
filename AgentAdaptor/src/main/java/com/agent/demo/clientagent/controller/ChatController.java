@@ -4,21 +4,32 @@ import com.agent.demo.clientagent.agent_adaptor.AgentAdaptor;
 import com.agent.demo.clientagent.agent_adaptor.AgentAdaptorRegistry;
 import com.agent.demo.clientagent.core.AgentRequest;
 import com.agent.demo.clientagent.core.AgentResponse;
+import com.agent.demo.clientagent.core.AgentStreamSink;
+import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 客户端 → 中间件的对话入口。
  *
- * <p>只接受 CAP v0.1 信封。请求/响应都用 Java record 映射，字段含义见
- * {@link ChatEnvelope} / {@link ChatPayload} / {@link FinalEnvelope}。
+ * <p>同一个接口支持两种响应：
+ * <ul>
+ *   <li>{@code Accept: application/json}：同步返回 final 信封；</li>
+ *   <li>{@code Accept: text/event-stream}：SSE 推送 delta / thinking / final / error。</li>
+ * </ul>
  */
 @RestController
 public class ChatController {
@@ -77,12 +88,54 @@ public class ChatController {
     }
 
     /**
+     * 流式响应：delta 信封。
+     *
+     * @param v       协议版本
+     * @param id      对应请求 ID
+     * @param type    固定 "delta"
+     * @param payload 文本增量
+     */
+    public record DeltaEnvelope(String v, String id, String type, DeltaPayload payload) {
+    }
+
+    /**
+     * delta 的业务字段。
+     *
+     * @param chatId 本轮对话 ID
+     * @param seq    本轮流内递增序号，delta/thinking 共用
+     * @param text   文本增量
+     */
+    public record DeltaPayload(String chatId, long seq, String text) {
+    }
+
+    /**
+     * 流式响应：thinking 信封。
+     *
+     * @param v       协议版本
+     * @param id      对应请求 ID
+     * @param type    固定 "thinking"
+     * @param payload 思考增量
+     */
+    public record ThinkingEnvelope(String v, String id, String type, ThinkingPayload payload) {
+    }
+
+    /**
+     * thinking 的业务字段。
+     *
+     * @param chatId 本轮对话 ID
+     * @param seq    与 delta 共用的递增序号
+     * @param text   思考增量
+     */
+    public record ThinkingPayload(String chatId, long seq, String text) {
+    }
+
+    /**
      * 失败响应：error 信封。
      *
      * @param v       协议版本
      * @param id      对应请求的 ID；无法解析时可为 null
      * @param type    固定 "error"
-     * @param payload  错误详情
+     * @param payload 错误详情
      */
     public record ErrorEnvelope(String v, String id, String type, ErrorPayload payload) {
     }
@@ -100,6 +153,18 @@ public class ChatController {
     private final AgentAdaptorRegistry agentAdaptorRegistry;
     /** 请求未带 clientId 时使用的默认客户端。 */
     private final String defaultClientId;
+
+    /**
+     * 流式任务线程池。
+     *
+     * <p>必须在返回 SseEmitter 之后异步执行 Agent，否则 SseEmitter 还没交给 Spring，
+     * 期间发送的 delta 会被缓冲，等整轮结束才一次性 flush，客户端就看不出流式效果。
+     */
+    private final ExecutorService streamExecutor = Executors.newFixedThreadPool(8, runnable -> {
+        Thread thread = new Thread(runnable, "chat-stream");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     public ChatController(AgentAdaptorRegistry agentAdaptorRegistry,
                           @Value("${agent.default-client-id:agent-client}") String defaultClientId) {
@@ -129,12 +194,16 @@ public class ChatController {
      *
      * <p>返回：
      * <ul>
-     *   <li>200 {@link FinalEnvelope}：payload 含 sessionId/chatId/agent/output；</li>
-     *   <li>400 {@link ErrorEnvelope}：payload 含 code/message。</li>
+     *   <li>{@code Accept: application/json}：200 {@link FinalEnvelope}；</li>
+     *   <li>{@code Accept: text/event-stream}：SSE，依次推送
+     *       {@code delta} / {@code thinking} / {@code final} / {@code error}；</li>
+     *   <li>参数错误：400 {@link ErrorEnvelope}。</li>
      * </ul>
      */
-    @PostMapping(value = "/chat", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> chat(@RequestBody ChatEnvelope request) {
+    @PostMapping(value = "/chat",
+            produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.TEXT_EVENT_STREAM_VALUE})
+    public Object chat(@RequestBody ChatEnvelope request,
+                       @RequestHeader(value = "Accept", required = false) String accept) {
         String id = request.id();
         if (!"chat".equals(request.type())) {
             return error(id, "INVALID_REQUEST", "type 必须是 chat");
@@ -150,17 +219,101 @@ public class ChatController {
         String agent = text(payload.agent(), null);
         String clientPrompt = text(payload.clientPrompt(), null);
         String chatId = UUID.randomUUID().toString();
+        String responseId = id == null || id.isBlank() ? chatId : id;
+
+        AgentAdaptor adaptor;
+        try {
+            adaptor = agentAdaptorRegistry.get(agent);
+        } catch (Exception e) {
+            return error(id, "INVALID_REQUEST", e.getMessage());
+        }
+
+        AgentRequest agentRequest = new AgentRequest(
+                clientId, endUserId, payload.prompt(), clientPrompt, sessionId, chatId);
+
+        if (accept != null && accept.contains(MediaType.TEXT_EVENT_STREAM_VALUE)) {
+            return stream(adaptor, agentRequest, chatId, responseId);
+        }
 
         try {
-            AgentAdaptor adaptor = agentAdaptorRegistry.get(agent);
-            AgentResponse result = adaptor.chat(new AgentRequest(
-                    clientId, endUserId, payload.prompt(), clientPrompt, sessionId, chatId));
-
-            String responseId = id == null || id.isBlank() ? chatId : id;
+            AgentResponse result = adaptor.chat(agentRequest);
             return ResponseEntity.ok(new FinalEnvelope("0.1", responseId, "final",
                     new FinalPayload(result.sessionId(), chatId, adaptor.name(), result.output())));
         } catch (Exception e) {
             return error(id, "AGENT_ERROR", e.getMessage());
+        }
+    }
+
+    /**
+     * 把适配器的流式回调转成 CAP SSE。
+     */
+    private SseEmitter stream(AgentAdaptor adaptor,
+                              AgentRequest request,
+                              String chatId,
+                              String responseId) {
+        SseEmitter emitter = new SseEmitter(300_000L);
+        emitter.onTimeout(emitter::complete);
+        emitter.onError(throwable -> emitter.complete());
+        AtomicLong seq = new AtomicLong();
+
+        AgentStreamSink sink = new AgentStreamSink() {
+            @Override
+            public void delta(String text) {
+                if (text == null || text.isEmpty()) {
+                    return;
+                }
+                send(emitter, "delta", new DeltaEnvelope("0.1", responseId, "delta",
+                        new DeltaPayload(chatId, seq.incrementAndGet(), text)));
+            }
+
+            @Override
+            public void thinking(String text) {
+                if (text == null || text.isEmpty()) {
+                    return;
+                }
+                send(emitter, "thinking", new ThinkingEnvelope("0.1", responseId, "thinking",
+                        new ThinkingPayload(chatId, seq.incrementAndGet(), text)));
+            }
+
+            @Override
+            public void finish(String sessionId, String output) {
+                send(emitter, "final", new FinalEnvelope("0.1", responseId, "final",
+                        new FinalPayload(sessionId, chatId, adaptor.name(), output)));
+                emitter.complete();
+            }
+
+            @Override
+            public void error(String code, String message) {
+                send(emitter, "error", new ErrorEnvelope("0.1", responseId, "error",
+                        new ErrorPayload(code, message == null ? "" : message)));
+                emitter.complete();
+            }
+        };
+
+        try {
+            streamExecutor.execute(() -> {
+                try {
+                    adaptor.chatStream(request, sink);
+                } catch (Exception e) {
+                    sink.error("AGENT_ERROR", e.getMessage());
+                }
+            });
+        } catch (Exception e) {
+            sink.error("AGENT_ERROR", "流式任务提交失败: " + e.getMessage());
+        }
+        return emitter;
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        streamExecutor.shutdownNow();
+    }
+
+    private void send(SseEmitter emitter, String event, Object data) {
+        try {
+            emitter.send(SseEmitter.event().name(event).data(data, MediaType.APPLICATION_JSON));
+        } catch (IOException e) {
+            emitter.completeWithError(e);
         }
     }
 

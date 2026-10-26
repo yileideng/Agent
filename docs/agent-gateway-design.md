@@ -352,7 +352,7 @@ Client  <--- CAP（统一、稳定、版本化） --->  Gateway  <--- AAP（异�
 {
   "v": "0.1",
   "id": "msg-7f3c...",
-  "type": "hello | register_tools | chat | delta | tool_call | tool_result | final | cancel | ping | pong | error",
+  "type": "hello | register_tools | chat | delta | thinking | tool_call | tool_result | final | cancel | ping | pong | error",
   "ts": 1730000000000,
   "sessionId": "sess-...",
   "payload": {}
@@ -380,7 +380,8 @@ Client  <--- CAP（统一、稳定、版本化） --->  Gateway  <--- AAP（异�
 | `tools_ack` | S→C | 注册结果 | `registered`, `catalogVersion` |
 | `chat` | C→S | 发起一轮对话 | `sessionId?`, `input`, `agent?`, `context?` |
 | `chat_ack` | S→C | 已受理 | `chatId`, `sessionId` |
-| `delta` | S→C | 流式文本 | `chatId`, `text` |
+| `delta` | S→C | 流式文本 | `chatId`, `seq`, `text` |
+| `thinking` | S→C | 思考过程增量 | `chatId`, `seq`, `text` |
 | `tool_call` | S→C | 调客户端工具 | `callId`, `tool`, `arguments`, `deadlineMs` |
 | `tool_result` | C→S | 回传结果 | `callId`, `status`, `result`, `error` |
 | `final` | S→C | 本轮结束 | `chatId`, `output`, `usage` |
@@ -560,7 +561,7 @@ sessionId 精确匹配 → (clientId, endUserId, deviceId) 唯一连接 → CLIE
 
 ```json
 {
-  "type": "delta | tool_call | final | error | usage",
+  "type": "delta | thinking | tool_call | final | error | usage",
   "chatId": "chat-1",
   "text": "…",
   "toolName": "save_note_draft",
@@ -574,6 +575,7 @@ sessionId 精确匹配 → (clientId, endUserId, deviceId) 唯一连接 → CLIE
 | type | 含义 |
 |---|---|
 | `delta` | 文本增量 |
+| `thinking` | 思考过程增量，独立通道 |
 | `tool_call` | Agent 请求调用工具 |
 | `final` | 本轮最终输出 |
 | `error` | Agent 错误 |
@@ -582,6 +584,7 @@ sessionId 精确匹配 → (clientId, endUserId, deviceId) 唯一连接 → CLIE
 ### 7.2 CLI 适配器（Claude Code / Qwen Code）
 
 - **对话**：`{command} -p <prompt> --output-format stream-json`，逐行解析 JSON 事件。
+- **流式**：`assistant` 文本映射为 CAP `delta`；`thinking` / `thinking_delta` / `reasoning_content` 映射为 CAP `thinking`，两者不混流。
 - **工具**：网关对 CLI 暴露 MCP Server（`POST /mcp/{sessionToken}`），CLI 通过 `--mcp-config` 连接。
 - **会话**：`--resume <agentSessionRef>`；但**会话真相源在网关**，CLI 的 session 只是加速。
 - **系统提示**：`--append-system-prompt` 注入客户端提示词 + 语言指令 + 安全约束。
@@ -594,6 +597,7 @@ sessionId 精确匹配 → (clientId, endUserId, deviceId) 唯一连接 → CLIE
 - 响应：`{ type: "CLIENT_TOOL_CALL" | "FINAL_OUTPUT", toolName?, toolParameters?, output? }`
 - Brain 保持**无状态**；会话由网关 `AgentSessionStore` 持有。
 - 网关驱动 Agent Loop：`CLIENT_TOOL_CALL → 路由客户端 → tool_result → 再调 Brain → FINAL_OUTPUT`，受 `max-steps` 限制。
+- **本期不支持流式**：只调用一次性 HTTP 接口，产生一个 `final`，不产生 `delta` / `thinking`；不做切块模拟。
 
 ### 7.4 扣子适配器（Coze）
 
@@ -761,6 +765,7 @@ sessionId 精确匹配 → (clientId, endUserId, deviceId) 唯一连接 → CLIE
 ### 12.3 相关文档
 
 - [client-integration.md](./client-integration.md)：客户端接入指南（HTTP 回调 / WebSocket、Java / JS 示例、排障清单）
+- [streaming-design.md](./streaming-design.md)：Agent 文本流式输出（CAP SSE）设计
 - [agent-middleware-design.md](./agent-middleware-design.md)：实现层设计与当前完成度评估
 - [agent-tool-discovery-and-calling.md](./agent-tool-discovery-and-calling.md)：Agent 如何发现并调用客户端工具
 - [client-registry-redesign.md](./client-registry-redesign.md)：ClientRegistry 重构方案

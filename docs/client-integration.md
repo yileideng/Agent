@@ -3,13 +3,13 @@
 > 目标读者：需要把客户端工具接入 Agent 网关的开发者
 > 协议版本：CAP v0.1
 > 适用范围：Java / JavaScript / Node / Python / Go / 移动端
-> 关联文档：[Agent 网关产品与技术方案](./agent-gateway-design.md)、[客户端 Agent 中间件技术方案](./agent-middleware-design.md)、[Agent 如何发现并调用客户端工具](./agent-tool-discovery-and-calling.md)
+> 关联文档：[Agent 网关产品与技术方案](./agent-gateway-design.md)、[客户端 Agent 中间件技术方案](./agent-middleware-design.md)、[Agent 如何发现并调用客户端工具](./agent-tool-discovery-and-calling.md)、[流式输出设计](./streaming-design.md)
 
 ---
 
 ## 0. 接入模型：三句话
 
-1. **对话由客户端主动发起**：`POST /chat`，返回 `final` 信封。
+1. **对话由客户端主动发起**：`POST /chat` 默认返回 `final`；设置 `Accept: text/event-stream` 时返回 `delta/thinking/final`。
 2. **工具始终在客户端执行**：网关通过 HTTP 回调或 WebSocket 下发 `tool_call`，客户端执行后回 `tool_result`。
 3. **客户端只需要一个 `endUserId` + 一份工具清单**：工具怎么实现、用什么语言，网关不关心。
 
@@ -87,6 +87,8 @@
 | `register_tools` | C→S | HTTP | 注册工具目录 |
 | `tools_ack` | S→C | HTTP | 注册结果 |
 | `chat` | C→S | HTTP | 发起一轮对话 |
+| `delta` | S→C | HTTP SSE | 流式文本增量 |
+| `thinking` | S→C | HTTP SSE | 思考过程增量，独立通道 |
 | `final` | S→C | HTTP | 本轮最终结果 |
 | `hello` | C→S | WS | 绑定连接与用户 |
 | `hello_ack` | S→C | WS | 连接确认 |
@@ -94,6 +96,8 @@
 | `tool_result` | C→S | HTTP 回调 / WS | 回传工具结果 |
 | `error` | S→C | HTTP / WS | 错误 |
 | `ping` / `pong` | 双向 | WS | 心跳 |
+
+> `POST /chat` 设置 `Accept: text/event-stream` 即走流式；`Accept: application/json` / 不设置时仍返回 `final`。协议细节见 [streaming-design.md](./streaming-design.md)。
 
 ---
 
@@ -600,6 +604,32 @@ client.connect();
 
 SDK 负责：注册、`hello`、心跳、断线重连、`callId` 关联、并发执行、`tool_result` 回传。
 
+### 9.4 流式对话
+
+```java
+ChatStreamResult result = client.chatStream(
+        "帮我写一篇咖啡测评", "cli", null,
+        new ChatStreamListener() {
+            @Override
+            public void onDelta(String text) {
+                System.out.print(text);   // 客户端增量渲染
+                System.out.flush();
+            }
+
+            @Override
+            public void onThinking(String text) {
+                System.out.print("[thinking] " + text);
+            }
+        });
+
+System.out.println("\nfinal: " + result.output());
+```
+
+- `chatStream` 自动使用 `Accept: text/event-stream`；
+- 工具调用仍走已配置的 HTTP 回调或 WebSocket；
+- 收到 `error` 事件时抛 `AgentException`，`code()` 可取错误码；
+- `self` 路径暂不支持流式，只会收到一个 `final`，`onDelta` 不会触发。
+
 ---
 
 ## 10. 其他语言接入
@@ -687,7 +717,7 @@ SDK 负责：注册、`hello`、心跳、断线重连、`callId` 关联、并发
 | 能力 | 状态 |
 |---|---|
 | token 鉴权 | 未实现，`clientId/endUserId` 仍由客户端上报 |
-| SSE / 流式对话 | 未实现，`/chat` 同步返回 `final` |
+| SSE / 流式对话 | 已实现：`/chat` 支持 `delta/thinking/final/error`；`self` 仅返回 `final` |
 | 异步长任务 | 未实现，工具结果需在 `deadlineMs` 内同步返回 |
 | 高风险工具确认 | 未实现 |
 | 工具进度 | 未实现 |
@@ -703,6 +733,7 @@ SDK 负责：注册、`hello`、心跳、断线重连、`callId` 关联、并发
 
 - [ ] 注册成功，`GET /clients` 能看到工具；
 - [ ] `POST /chat` 返回 `final` 信封；
+- [ ] `Accept: text/event-stream` 时能按序收到 `delta` / `thinking` / `final`；
 - [ ] 一轮对话内能收到 `tool_call` 并回 `tool_result`；
 - [ ] 同一轮多次工具调用（不同 `callId`）能正确汇总；
 - [ ] 带上 `sessionId` 的多轮对话正常；

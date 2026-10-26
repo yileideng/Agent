@@ -37,6 +37,8 @@ agent:
     mcp-server-name: client-tools
     # 单次CLI调用超时，超时后强制终止进程
     timeout-seconds: 180
+    # 请求 CLI 输出 partial messages，否则 stream-json 可能只在结束时给整段回答
+    include-partial-messages: true
     # 追加到CLI系统提示词的语言约束（CLI默认系统提示词为英文）
     language-prompt: 请始终使用简体中文回答用户，不要输出英文。
     # CLI每会话工作目录根路径，留空则使用系统临时目录下的 client-agent-workspaces

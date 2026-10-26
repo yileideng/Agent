@@ -23,6 +23,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 
 /**
  * 客户端 SDK：把 WebSocket 的连接、注册、心跳、重连、并发执行和 callId 关联全部封装起来。
@@ -153,6 +154,79 @@ public final class AgentClient implements AutoCloseable {
      * 向中间件发起一轮对话，返回中间件原始 JSON 响应。
      */
     public String chat(String prompt, String agent, String sessionId) {
+        ObjectNode request = chatRequest(prompt, agent, sessionId);
+        HttpResponse<String> response = postJson(gatewayUrl + "/chat", request,
+                Duration.ofSeconds(chatTimeoutSeconds));
+        if (response.statusCode() >= 300) {
+            throw new IllegalStateException("对话失败: HTTP " + response.statusCode()
+                    + " " + response.body());
+        }
+        return response.body();
+    }
+
+    /**
+     * 流式对话：逐条回调 delta / thinking，返回 final 结果。
+     *
+     * <p>请求使用 {@code Accept: text/event-stream}；工具调用仍走已配置的
+     * HTTP 回调或 WebSocket，不在这条聊天流里。
+     *
+     * @param listener 文本/思考增量回调
+     * @return final 结果；流中收到 error 时抛 {@link AgentException}
+     */
+    public ChatStreamResult chatStream(String prompt,
+                                       String agent,
+                                       String sessionId,
+                                       ChatStreamListener listener) {
+        if (listener == null) {
+            throw new IllegalArgumentException("listener 不能为空");
+        }
+        ObjectNode request = chatRequest(prompt, agent, sessionId);
+        HttpResponse<Stream<String>> response = postJsonStream(
+                gatewayUrl + "/chat", request, Duration.ofSeconds(chatTimeoutSeconds));
+
+        if (response.statusCode() >= 300) {
+            String body = String.join("\n", response.body().toList());
+            throw new IllegalStateException("流式对话失败: HTTP " + response.statusCode()
+                    + " " + body);
+        }
+
+        String event = null;
+        StringBuilder data = new StringBuilder();
+        ChatStreamResult result = null;
+        try (Stream<String> lines = response.body()) {
+            for (String line : (Iterable<String>) lines::iterator) {
+                if (line.isEmpty()) {
+                    ChatStreamResult current = dispatchSse(event, data.toString(), listener);
+                    if (current != null) {
+                        result = current;
+                    }
+                    event = null;
+                    data.setLength(0);
+                } else if (line.startsWith("event:")) {
+                    event = line.substring("event:".length()).trim();
+                } else if (line.startsWith("data:")) {
+                    if (data.length() > 0) {
+                        data.append('\n');
+                    }
+                    data.append(line.substring("data:".length()).trim());
+                }
+            }
+            // 兼容服务端最后一条事件后没有空行的情况
+            if (data.length() > 0) {
+                ChatStreamResult current = dispatchSse(event, data.toString(), listener);
+                if (current != null) {
+                    result = current;
+                }
+            }
+        }
+
+        if (result == null) {
+            throw new IllegalStateException("流式对话结束但未收到 final");
+        }
+        return result;
+    }
+
+    private ObjectNode chatRequest(String prompt, String agent, String sessionId) {
         ObjectNode request = envelope("chat");
         ObjectNode payload = (ObjectNode) request.get("payload");
         payload.put("clientId", clientId);
@@ -167,13 +241,37 @@ public final class AgentClient implements AutoCloseable {
         if (clientPrompt != null && !clientPrompt.isBlank()) {
             payload.put("clientPrompt", clientPrompt);
         }
-        HttpResponse<String> response = postJson(gatewayUrl + "/chat", request,
-                Duration.ofSeconds(chatTimeoutSeconds));
-        if (response.statusCode() >= 300) {
-            throw new IllegalStateException("对话失败: HTTP " + response.statusCode()
-                    + " " + response.body());
+        return request;
+    }
+
+    /**
+     * 处理一条 SSE 事件；返回非 null 表示收到 final。
+     */
+    private ChatStreamResult dispatchSse(String event, String data, ChatStreamListener listener) {
+        if (data == null || data.isBlank()) {
+            return null;
         }
-        return response.body();
+        JsonNode node = json.readTree(data);
+        String type = node.path("type").asText(event == null ? "" : event);
+        JsonNode payload = node.path("payload");
+        switch (type) {
+            case "delta" -> listener.onDelta(payload.path("text").asText(""));
+            case "thinking" -> listener.onThinking(payload.path("text").asText(""));
+            case "final" -> {
+                return new ChatStreamResult(
+                        payload.path("sessionId").asText(null),
+                        payload.path("chatId").asText(null),
+                        payload.path("agent").asText(null),
+                        payload.path("output").asText(""));
+            }
+            case "error" -> throw new AgentException(
+                    payload.path("code").asText("AGENT_ERROR"),
+                    payload.path("message").asText("流式对话失败"));
+            default -> {
+                // 未知事件忽略，保持向前兼容
+            }
+        }
+        return null;
     }
 
     /**
@@ -258,6 +356,24 @@ public final class AgentClient implements AutoCloseable {
             return http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         } catch (Exception e) {
             throw new IllegalStateException("请求失败(" + url + "): " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 发起 SSE 请求，返回逐行响应体。
+     */
+    private HttpResponse<Stream<String>> postJsonStream(String url, ObjectNode body, Duration timeout) {
+        try {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                    .timeout(timeout)
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "text/event-stream")
+                    .POST(HttpRequest.BodyPublishers.ofString(
+                            json.writeValueAsString(body), StandardCharsets.UTF_8))
+                    .build();
+            return http.send(request, HttpResponse.BodyHandlers.ofLines());
+        } catch (Exception e) {
+            throw new IllegalStateException("流式请求失败(" + url + "): " + e.getMessage(), e);
         }
     }
 

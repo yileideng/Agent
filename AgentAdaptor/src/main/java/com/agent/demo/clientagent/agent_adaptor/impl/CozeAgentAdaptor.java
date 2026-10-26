@@ -4,6 +4,7 @@ import com.agent.demo.clientagent.agent_adaptor.AgentAdaptor;
 import com.agent.demo.clientagent.core.AgentRequest;
 import com.agent.demo.clientagent.core.AgentSessionStore;
 import com.agent.demo.clientagent.core.AgentResponse;
+import com.agent.demo.clientagent.core.AgentStreamSink;
 import com.coze.openapi.client.chat.CreateChatReq;
 import com.coze.openapi.client.chat.model.ChatEvent;
 import com.coze.openapi.client.chat.model.ChatEventType;
@@ -55,7 +56,7 @@ public class CozeAgentAdaptor implements AgentAdaptor {
 
     @Override
     public List<String> capabilities() {
-        return List.of("chat");
+        return List.of("chat", "streaming");
     }
 
     @Override
@@ -88,6 +89,19 @@ public class CozeAgentAdaptor implements AgentAdaptor {
 
     @Override
     public AgentResponse chat(AgentRequest request) {
+        return doChat(request, AgentStreamSink.NOOP);
+    }
+
+    @Override
+    public void chatStream(AgentRequest request, AgentStreamSink sink) {
+        try {
+            doChat(request, sink);
+        } catch (Exception e) {
+            sink.error("AGENT_ERROR", e.getMessage());
+        }
+    }
+
+    private AgentResponse doChat(AgentRequest request, AgentStreamSink sink) {
         String localSessionId = sessionStore.resolveSessionId(
                 request.clientId(), request.endUserId(), request.sessionId());
         AgentSessionStore.SessionState state =
@@ -111,7 +125,9 @@ public class CozeAgentAdaptor implements AgentAdaptor {
         StringBuilder answer = new StringBuilder();
         for (ChatEvent event : coze().chat().stream(reqBuilder.build()).blockingIterable()) {
             if (event.getEvent() == ChatEventType.CONVERSATION_MESSAGE_DELTA) {
-                answer.append(event.getMessage().getContent());
+                String content = event.getMessage().getContent();
+                answer.append(content);
+                sink.delta(content);
             } else if (event.getEvent() == ChatEventType.CONVERSATION_CHAT_COMPLETED) {
                 state.bindExternalSessionId(event.getChat().getConversationID());
             } else if (event.getEvent() == ChatEventType.CONVERSATION_CHAT_FAILED) {
@@ -119,6 +135,8 @@ public class CozeAgentAdaptor implements AgentAdaptor {
             }
         }
 
-        return new AgentResponse(localSessionId, answer.toString());
+        String output = answer.toString();
+        sink.finish(localSessionId, output);
+        return new AgentResponse(localSessionId, output);
     }
 }

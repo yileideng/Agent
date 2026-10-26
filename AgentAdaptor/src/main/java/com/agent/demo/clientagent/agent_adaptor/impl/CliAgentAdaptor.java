@@ -4,6 +4,7 @@ import com.agent.demo.clientagent.agent_adaptor.AgentAdaptor;
 import com.agent.demo.clientagent.core.AgentRequest;
 import com.agent.demo.clientagent.core.AgentSessionStore;
 import com.agent.demo.clientagent.core.AgentResponse;
+import com.agent.demo.clientagent.core.AgentStreamSink;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -61,6 +62,8 @@ public class CliAgentAdaptor implements AgentAdaptor {
     private final String workDir;
     /** 追加到 CLI 系统提示词的语言约束。 */
     private final String languagePrompt;
+    /** 是否请求 CLI 输出 partial messages（token/片段级流式）。 */
+    private final boolean includePartialMessages;
     /** 会话归属。 */
     private final AgentSessionStore sessionStore;
     /** 构造 mcp-config 和解析 stream-json。 */
@@ -77,6 +80,7 @@ public class CliAgentAdaptor implements AgentAdaptor {
                            @Value("${agent.cli.timeout-seconds:180}") long timeoutSeconds,
                            @Value("${agent.cli.work-dir:}") String workDir,
                            @Value("${agent.cli.language-prompt:请始终使用简体中文回答用户。}") String languagePrompt,
+                           @Value("${agent.cli.include-partial-messages:true}") boolean includePartialMessages,
                            AgentSessionStore sessionStore) {
         this.command = command;
         this.nodePath = nodePath;
@@ -89,6 +93,7 @@ public class CliAgentAdaptor implements AgentAdaptor {
         this.timeoutSeconds = timeoutSeconds;
         this.workDir = workDir;
         this.languagePrompt = languagePrompt;
+        this.includePartialMessages = includePartialMessages;
         this.sessionStore = sessionStore;
     }
 
@@ -104,7 +109,7 @@ public class CliAgentAdaptor implements AgentAdaptor {
 
     @Override
     public List<String> capabilities() {
-        return List.of("chat", "client-tool-call", "mcp");
+        return List.of("chat", "client-tool-call", "mcp", "streaming", "thinking");
     }
 
     @Override
@@ -119,6 +124,19 @@ public class CliAgentAdaptor implements AgentAdaptor {
 
     @Override
     public AgentResponse chat(AgentRequest request) {
+        return doChat(request, AgentStreamSink.NOOP);
+    }
+
+    @Override
+    public void chatStream(AgentRequest request, AgentStreamSink sink) {
+        try {
+            doChat(request, sink);
+        } catch (Exception e) {
+            sink.error("AGENT_ERROR", e.getMessage());
+        }
+    }
+
+    private AgentResponse doChat(AgentRequest request, AgentStreamSink sink) {
         String clientId = request.clientId();
         String localSessionId = sessionStore.resolveSessionId(
                 clientId, request.endUserId(), request.sessionId());
@@ -157,7 +175,7 @@ public class CliAgentAdaptor implements AgentAdaptor {
                     + ",cwd=" + sessionDir + "] 启动CLI进程: " + String.join(" ", cmd));
             Process process = processBuilder.start();
             Thread reader = new Thread(
-                    () -> readStream(process, state, answer, errBuf), "cli-reader-" + safeName(localSessionId));
+                    () -> readStream(process, state, answer, errBuf, sink), "cli-reader-" + safeName(localSessionId));
             reader.setDaemon(true);
             reader.start();
 
@@ -199,7 +217,9 @@ public class CliAgentAdaptor implements AgentAdaptor {
             throw new IllegalStateException(command + " 执行失败(exit=" + exit + "): " + errBuf);
         }
 
-        return new AgentResponse(localSessionId, answer.toString());
+        String output = answer.toString();
+        sink.finish(localSessionId, output);
+        return new AgentResponse(localSessionId, output);
     }
 
     private List<String> buildCommand(AgentRequest request, AgentSessionStore.SessionState state) {
@@ -214,6 +234,10 @@ public class CliAgentAdaptor implements AgentAdaptor {
         cmd.add(request.userPrompt());
         cmd.add("--output-format");
         cmd.add("stream-json");
+        // 请求 token/片段级增量；不支持该参数的 CLI 可在配置里关闭
+        if (includePartialMessages) {
+            cmd.add("--include-partial-messages");
+        }
         // 中间件持有的CLI会话引用，存在时续接上下文
         String cliSessionId = state.externalSessionId();
         if (cliSessionId != null) {
@@ -247,12 +271,19 @@ public class CliAgentAdaptor implements AgentAdaptor {
     }
 
     /**
-     * 把 CLI 的 stream-json 输出解析成最终回答；遇到 system 事件时记录CLI会话ID
+     * 逐行解析 CLI 的 stream-json，把文本和 thinking 立即转发给客户端。
+     *
+     * <p>不同 CLI 的事件形状不完全一致，这里兼容：
+     * assistant 完整消息、stream_event 增量、顶层 text_delta / thinking_delta。
      */
     private void readStream(Process process, AgentSessionStore.SessionState state,
-                            StringBuilder answer, StringBuilder errBuf) {
+                            StringBuilder answer, StringBuilder errBuf, AgentStreamSink sink) {
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            // 开了 --include-partial-messages 后，CLI 还会再发一条完整 assistant 消息；
+            // 用这两个标记避免把已经流式发过的文本/thinking 再追加一遍。
+            boolean partialTextSeen = false;
+            boolean partialThinkingSeen = false;
             String line;
             while ((line = reader.readLine()) != null) {
                 if (line.isBlank()) continue;
@@ -278,17 +309,54 @@ public class CliAgentAdaptor implements AgentAdaptor {
                         JsonNode content = node.path("message").path("content");
                         if (content.isArray()) {
                             for (JsonNode block : content) {
-                                if ("text".equals(block.path("type").asText())) {
-                                    answer.append(block.path("text").asText());
+                                String blockType = block.path("type").asText("");
+                                if ("text".equals(blockType)) {
+                                    if (!partialTextSeen) {
+                                        emitDelta(sink, answer, block.path("text").asText(""));
+                                    }
+                                } else if ("thinking".equals(blockType) || "reasoning".equals(blockType)) {
+                                    if (!partialThinkingSeen) {
+                                        emitThinking(sink, block.path("thinking")
+                                                .asText(block.path("text").asText("")));
+                                    }
                                 }
                             }
                         }
+                        // 有些 CLI 把 thinking 放在顶层字段
+                        String thinking = node.path("thinking").asText("");
+                        if (thinking.isEmpty()) {
+                            thinking = node.path("reasoning_content").asText("");
+                        }
+                        if (!thinking.isEmpty() && !partialThinkingSeen) {
+                            emitThinking(sink, thinking);
+                        }
+                    }
+                    case "stream_event" -> {
+                        JsonNode delta = node.path("event").path("delta");
+                        String deltaType = delta.path("type").asText("");
+                        if ("text_delta".equals(deltaType)) {
+                            partialTextSeen = true;
+                            emitDelta(sink, answer, delta.path("text").asText(""));
+                        } else if ("thinking_delta".equals(deltaType)) {
+                            partialThinkingSeen = true;
+                            emitThinking(sink, delta.path("thinking")
+                                    .asText(delta.path("text").asText("")));
+                        }
+                    }
+                    case "text_delta" -> {
+                        partialTextSeen = true;
+                        emitDelta(sink, answer, node.path("text").asText(""));
+                    }
+                    case "thinking_delta" -> {
+                        partialThinkingSeen = true;
+                        emitThinking(sink, node.path("thinking")
+                                .asText(node.path("text").asText("")));
                     }
                     case "result" -> {
                         if (node.path("is_error").asBoolean()) {
                             errBuf.append(node.path("error").path("message").asText("unknown error"));
                         } else if (answer.isEmpty()) {
-                            answer.append(node.path("result").asText(""));
+                            emitDelta(sink, answer, node.path("result").asText(""));
                         }
                     }
                     default -> { }
@@ -297,6 +365,21 @@ public class CliAgentAdaptor implements AgentAdaptor {
         } catch (IOException e) {
             errBuf.append("读取CLI输出失败: ").append(e.getMessage());
         }
+    }
+
+    private void emitDelta(AgentStreamSink sink, StringBuilder answer, String text) {
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        answer.append(text);
+        sink.delta(text);
+    }
+
+    private void emitThinking(AgentStreamSink sink, String text) {
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        sink.thinking(text);
     }
 
     /**

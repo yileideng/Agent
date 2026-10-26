@@ -2,6 +2,8 @@ package com.agent.demo.agentclient.client;
 
 import com.agent.demo.agentclient.tool.ClientTool;
 import com.agent.demo.agentsdk.AgentClient;
+import com.agent.demo.agentsdk.ChatStreamListener;
+import com.agent.demo.agentsdk.ChatStreamResult;
 import com.agent.demo.agentsdk.Transport;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Value;
@@ -75,6 +77,32 @@ public class MobileClient {
      */
     public String chat(String prompt, String agent, String sessionId) {
         return agentClient.chat(prompt, agent, sessionId);
+    }
+
+    /**
+     * 流式对话：收到 delta 立即打印；工具调用仍走 WebSocket。
+     */
+    public ChatStreamResult chatStream(String prompt, String agent, String sessionId) {
+        System.out.println("[AgentMobile][stream] 开始: " + prompt);
+        ChatStreamResult result = agentClient.chatStream(prompt, agent, sessionId,
+                new ChatStreamListener() {
+                    @Override
+                    public void onDelta(String text) {
+                        System.out.print(text);
+                        System.out.flush();
+                    }
+
+                    @Override
+                    public void onThinking(String text) {
+                        System.out.print("[thinking] " + text);
+                        System.out.flush();
+                    }
+                });
+        // 正文已经通过 onDelta 实时打印，这里只打印结束标记，避免重复输出整段回答
+        System.out.println();
+        System.out.println("[AgentMobile][stream] final: sessionId=" + result.sessionId()
+                + "，chatId=" + result.chatId());
+        return result;
     }
 
     public boolean isConnected() {
