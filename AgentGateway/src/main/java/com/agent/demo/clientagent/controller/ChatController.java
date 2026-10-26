@@ -1,7 +1,7 @@
 package com.agent.demo.clientagent.controller;
 
-import com.agent.demo.clientagent.agent_adaptor.AgentAdaptor;
-import com.agent.demo.clientagent.agent_adaptor.AgentAdaptorRegistry;
+import com.agent.demo.clientagent.acp_agent.AcpAgent;
+import com.agent.demo.clientagent.acp_agent.AcpAgentRegistry;
 import com.agent.demo.clientagent.core.AgentRequest;
 import com.agent.demo.clientagent.core.AgentResponse;
 import com.agent.demo.clientagent.core.AgentStreamSink;
@@ -149,8 +149,8 @@ public class ChatController {
     public record ErrorPayload(String code, String message) {
     }
 
-    /** Agent 适配器注册表，用于按名称选择 Agent。 */
-    private final AgentAdaptorRegistry agentAdaptorRegistry;
+    /** Agent 注册表，用于按名称选择 Agent。 */
+    private final AcpAgentRegistry acpAgentRegistry;
     /** 请求未带 clientId 时使用的默认客户端。 */
     private final String defaultClientId;
 
@@ -166,9 +166,9 @@ public class ChatController {
         return thread;
     });
 
-    public ChatController(AgentAdaptorRegistry agentAdaptorRegistry,
+    public ChatController(AcpAgentRegistry acpAgentRegistry,
                           @Value("${agent.default-client-id:agent-client}") String defaultClientId) {
-        this.agentAdaptorRegistry = agentAdaptorRegistry;
+        this.acpAgentRegistry = acpAgentRegistry;
         this.defaultClientId = defaultClientId;
     }
 
@@ -221,9 +221,9 @@ public class ChatController {
         String chatId = UUID.randomUUID().toString();
         String responseId = id == null || id.isBlank() ? chatId : id;
 
-        AgentAdaptor adaptor;
+        AcpAgent adaptor;
         try {
-            adaptor = agentAdaptorRegistry.get(agent);
+            adaptor = acpAgentRegistry.get(agent);
         } catch (Exception e) {
             return error(id, "INVALID_REQUEST", e.getMessage());
         }
@@ -247,7 +247,7 @@ public class ChatController {
     /**
      * 把适配器的流式回调转成 CAP SSE。
      */
-    private SseEmitter stream(AgentAdaptor adaptor,
+    private SseEmitter stream(AcpAgent adaptor,
                               AgentRequest request,
                               String chatId,
                               String responseId) {

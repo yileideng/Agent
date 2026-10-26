@@ -1,0 +1,132 @@
+<svg width="1600" height="1000" viewBox="0 0 1600 1000" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"/>
+    </marker>
+    <marker id="arrow-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0F766E"/>
+    </marker>
+    <marker id="arrow-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#EA580C"/>
+    </marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#0F172A" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="1000" fill="#F7F9FC"/>
+  <text x="60" y="62" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="38" font-weight="700" fill="#0F172A">Agent 网关架构</text>
+  <text x="60" y="100" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="18" fill="#475569">客户端稳定 · Agent 可替换 · 客户端工具在客户端执行</text>
+
+  <!-- Client -->
+  <rect x="60" y="210" width="300" height="320" rx="16" fill="#EFF6FF" stroke="#3B82F6" stroke-width="2" filter="url(#shadow)"/>
+  <text x="84" y="252" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="24" font-weight="700" fill="#1E3A8A">客户端 / App</text>
+  <text x="84" y="294" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="17" fill="#1E3A8A">· CAP SDK / WebSocket</text>
+  <text x="84" y="326" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="17" fill="#1E3A8A">· UI / 会话</text>
+  <text x="84" y="358" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="17" fill="#1E3A8A">· 客户端工具</text>
+  <text x="84" y="390" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="17" fill="#1E3A8A">· 客户端记忆 / RAG</text>
+  <text x="84" y="422" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="17" fill="#1E3A8A">· 权限确认</text>
+  <text x="84" y="482" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="15" fill="#475569">只面对 CAP，不感知 Agent 差异</text>
+
+  <!-- Gateway -->
+  <rect x="440" y="150" width="670" height="520" rx="18" fill="#F0FDFA" stroke="#0F766E" stroke-width="2.5" filter="url(#shadow)"/>
+  <text x="468" y="192" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#134E4A">Gateway</text>
+  <text x="620" y="192" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="15" fill="#0F766E">统一路由、会话、事件、权限、工具</text>
+
+  <!-- Registry -->
+  <rect x="470" y="215" width="610" height="104" rx="12" fill="#FFFFFF" stroke="#14B8A6" stroke-width="1.6"/>
+  <text x="490" y="246" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="20" font-weight="700" fill="#0F766E">AcpAgentRegistry</text>
+  <text x="490" y="274" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="14" fill="#475569">内部 Adaptor + 外部 ACP Agent 描述</text>
+  <rect x="490" y="286" width="170" height="22" rx="11" fill="#CCFBF1"/>
+  <text x="502" y="302" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="12" fill="#0F766E">AcpClientAgent</text>
+  <rect x="670" y="286" width="170" height="22" rx="11" fill="#CCFBF1"/>
+  <text x="682" y="302" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="12" fill="#0F766E">SelfAgentAdaptor</text>
+  <rect x="850" y="286" width="180" height="22" rx="11" fill="#CCFBF1"/>
+  <text x="862" y="302" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="12" fill="#0F766E">CozeAgentAdaptor</text>
+
+  <!-- AcpAgent interface -->
+  <rect x="470" y="342" width="610" height="72" rx="12" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+  <text x="490" y="372" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="19" font-weight="700" fill="#134E4A">AcpAgent 统一接口</text>
+  <text x="490" y="396" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="14" fill="#475569">chat / chatStream / capabilities / cancel</text>
+
+  <!-- MCP -->
+  <rect x="470" y="438" width="610" height="76" rx="12" fill="#FFFFFF" stroke="#7C3AED" stroke-width="1.6"/>
+  <text x="490" y="468" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="19" font-weight="700" fill="#5B21B6">MCP Server  /mcp/{clientId}</text>
+  <text x="490" y="492" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="14" fill="#475569">tools/list · tools/call · content / isError</text>
+
+  <!-- Session -->
+  <rect x="470" y="538" width="610" height="100" rx="12" fill="#FFFFFF" stroke="#14B8A6" stroke-width="1.6"/>
+  <text x="490" y="568" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="19" font-weight="700" fill="#0F766E">Session / Event / Permission</text>
+  <text x="490" y="594" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="14" fill="#475569">sessionId · 流式事件 · 工具状态 · 用户确认</text>
+  <text x="490" y="618" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="14" fill="#475569">不把 Agent 私有协议暴露给客户端</text>
+
+  <!-- Agents -->
+  <rect x="1170" y="195" width="360" height="440" rx="18" fill="#FFF7ED" stroke="#EA580C" stroke-width="2.5" filter="url(#shadow)"/>
+  <text x="1194" y="237" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="25" font-weight="700" fill="#9A3412">Agent 侧</text>
+  <text x="1194" y="266" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="14" fill="#9A3412">按协议适配，不要求客户端感知</text>
+
+  <rect x="1194" y="288" width="312" height="58" rx="10" fill="#FFFFFF" stroke="#FDBA74"/>
+  <text x="1212" y="314" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="17" font-weight="700" fill="#9A3412">Qwen Code --acp</text>
+  <text x="1212" y="334" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="13" fill="#475569">原生 ACP Agent（stdio）</text>
+
+  <rect x="1194" y="358" width="312" height="58" rx="10" fill="#FFFFFF" stroke="#FDBA74"/>
+  <text x="1212" y="384" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="17" font-weight="700" fill="#9A3412">Claude / Codex</text>
+  <text x="1212" y="404" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="13" fill="#475569">通过 ACP adapter 接入</text>
+
+  <rect x="1194" y="428" width="312" height="58" rx="10" fill="#FFFFFF" stroke="#FDBA74"/>
+  <text x="1212" y="454" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="17" font-weight="700" fill="#9A3412">Self Brain / Coze</text>
+  <text x="1212" y="474" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="13" fill="#475569">HTTP / 私有协议，由 Adaptor 包装</text>
+
+  <rect x="1194" y="510" width="312" height="86" rx="10" fill="#FFFFFF" stroke="#EA580C" stroke-dasharray="7 5"/>
+  <text x="1212" y="538" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="17" font-weight="700" fill="#9A3412">外部 ACP Server</text>
+  <text x="1212" y="560" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="13" fill="#475569">注册 descriptor（命令 / 地址 / 能力）</text>
+  <text x="1212" y="580" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="13" fill="#475569">由 AcpClientAgent 按需启动或连接</text>
+
+  <!-- Client tools -->
+  <rect x="60" y="680" width="300" height="150" rx="16" fill="#F5F3FF" stroke="#7C3AED" stroke-width="2" filter="url(#shadow)"/>
+  <text x="84" y="720" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="22" font-weight="700" fill="#5B21B6">客户端工具</text>
+  <text x="84" y="752" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="16" fill="#5B21B6">HTTP 回调 / WebSocket</text>
+  <text x="84" y="782" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="16" fill="#5B21B6">数据与执行留在客户端</text>
+  <text x="84" y="810" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="14" fill="#475569">例如：用户资料、相册、RAG、发布</text>
+
+  <!-- Arrows client-gateway -->
+  <path d="M 360 300 L 440 300" stroke="#3B82F6" stroke-width="2.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="366" y="286" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="13" fill="#1D4ED8">chat / delta / final</text>
+
+  <path d="M 440 390 L 360 390" stroke="#3B82F6" stroke-width="2.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="366" y="376" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="13" fill="#1D4ED8">tool_call</text>
+
+  <path d="M 360 480 L 440 480" stroke="#3B82F6" stroke-width="2.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="366" y="466" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="13" fill="#1D4ED8">tool_result</text>
+
+  <!-- Arrows gateway-agent -->
+  <path d="M 1110 320 L 1170 320" stroke="#EA580C" stroke-width="2.5" fill="none" marker-end="url(#arrow-orange)"/>
+  <text x="1112" y="306" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="13" fill="#9A3412">ACP / HTTP</text>
+
+  <path d="M 1170 400 L 1110 400" stroke="#EA580C" stroke-width="2.5" fill="none" marker-end="url(#arrow-orange)"/>
+  <text x="1112" y="386" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="13" fill="#9A3412">update / result</text>
+
+  <!-- MCP tool arrow -->
+  <path d="M 470 476 C 360 476, 300 570, 250 680" stroke="#7C3AED" stroke-width="2.2" fill="none" marker-end="url(#arrow)"/>
+  <text x="270" y="590" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="13" fill="#5B21B6">MCP tools/call</text>
+  <path d="M 300 680 C 360 590, 430 560, 470 552" stroke="#7C3AED" stroke-width="2.2" fill="none" marker-end="url(#arrow)" stroke-dasharray="6 4"/>
+  <text x="315" y="650" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="13" fill="#5B21B6">content / result</text>
+
+  <!-- Registry to agent dashed -->
+  <path d="M 1080 250 C 1130 250, 1140 220, 1170 220" stroke="#0F766E" stroke-width="2" fill="none" stroke-dasharray="7 5" marker-end="url(#arrow-teal)"/>
+  <text x="1082" y="236" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="12" fill="#0F766E">注册 / 发现</text>
+
+  <!-- Legend -->
+  <rect x="440" y="720" width="670" height="110" rx="12" fill="#FFFFFF" stroke="#E2E8F0"/>
+  <text x="464" y="754" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="15" font-weight="700" fill="#0F172A">读图要点</text>
+  <text x="464" y="780" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="13" fill="#475569">实线：请求 / 事件；虚线：注册 / 发现 / 结果回传</text>
+  <text x="464" y="804" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="13" fill="#475569">客户端工具始终在客户端执行，Gateway 只做协议转换与路由</text>
+  <line x1="900" y1="742" x2="940" y2="742" stroke="#3B82F6" stroke-width="3"/>
+  <text x="948" y="747" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="12" fill="#475569">CAP</text>
+  <line x1="1000" y1="742" x2="1040" y2="742" stroke="#EA580C" stroke-width="3"/>
+  <text x="1048" y="747" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="12" fill="#475569">Agent 协议</text>
+  <line x1="900" y1="768" x2="940" y2="768" stroke="#7C3AED" stroke-width="3"/>
+  <text x="948" y="773" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="12" fill="#475569">MCP</text>
+  <line x1="1000" y1="768" x2="1040" y2="768" stroke="#0F766E" stroke-width="3" stroke-dasharray="6 4"/>
+  <text x="1048" y="773" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="12" fill="#475569">Registry</text>
+</svg>

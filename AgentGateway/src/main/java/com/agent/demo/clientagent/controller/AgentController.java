@@ -1,6 +1,6 @@
 package com.agent.demo.clientagent.controller;
 
-import com.agent.demo.clientagent.agent_adaptor.AgentAdaptorRegistry;
+import com.agent.demo.clientagent.acp_agent.AcpAgentRegistry;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -15,10 +15,10 @@ import java.util.Map;
 @RestController
 public class AgentController {
 
-    /** Agent 适配器注册表。 */
-    private final AgentAdaptorRegistry registry;
+    /** Agent 注册表。 */
+    private final AcpAgentRegistry registry;
 
-    public AgentController(AgentAdaptorRegistry registry) {
+    public AgentController(AcpAgentRegistry registry) {
         this.registry = registry;
     }
 

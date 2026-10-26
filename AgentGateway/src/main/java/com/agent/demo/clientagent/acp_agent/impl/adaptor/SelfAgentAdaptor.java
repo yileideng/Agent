@@ -1,6 +1,6 @@
-package com.agent.demo.clientagent.agent_adaptor.impl;
+package com.agent.demo.clientagent.acp_agent.impl.adaptor;
 
-import com.agent.demo.clientagent.agent_adaptor.AgentAdaptor;
+import com.agent.demo.clientagent.acp_agent.AcpAgent;
 import com.agent.demo.clientagent.core.AgentRequest;
 import com.agent.demo.clientagent.core.AgentSessionStore;
 import com.agent.demo.clientagent.core.AgentResponse;
@@ -26,7 +26,7 @@ import java.util.Map;
  * 这样自研Agent可以独立部署和替换，且客户端工具仍然只在客户端执行。
  */
 @Component
-public class SelfAgentAdaptor implements AgentAdaptor {
+public class SelfAgentAdaptor implements AcpAgent {
 
     /**
      * 中间件调用自研Agent服务(AgentBrain)的请求体。

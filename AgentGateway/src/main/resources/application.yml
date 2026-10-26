@@ -24,6 +24,7 @@ agent:
   ws:
     tool-timeout-ms: 60000
   cli:
+    # 当前按 Qwen Code 的参数构造；换 Claude Code 需调整认证参数与 mcp-config 格式
     # qwen 需 Node20+，本机默认 node 是16，因此显式指定 shim 与 Node22 目录
     command: 'D:\nodejs\node_global\qwen.cmd'
     node-path: 'D:\nvm\v22.14.0'
@@ -43,6 +44,29 @@ agent:
     language-prompt: 请始终使用简体中文回答用户，不要输出英文。
     # CLI每会话工作目录根路径，留空则使用系统临时目录下的 client-agent-workspaces
     work-dir: ''
+
+  # ACP Agent 接入（当前用 Qwen Code --acp 验证）
+  acp:
+    qwen:
+      # 默认关闭；验证时通过环境变量/启动参数打开
+      enabled: false
+      id: qwen-acp
+      command: 'D:\nodejs\node_global\qwen.cmd'
+      node-path: 'D:\nvm\v22.14.0'
+      auth-type: openai
+      # 不要把 key 写进仓库；启动时用 AGENT_ACP_API_KEY 注入
+      api-key: ${AGENT_ACP_API_KEY:}
+      base-url: 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+      model: qwen-plus
+      mcp-url: 'http://localhost:8080/mcp'
+      mcp-server-name: client-tools
+      # 标准路径走 session/new.mcpServers；Qwen 0.26 ACP 有 MCP 工具不进入模型工具表的已知问题。
+      # true 会改用 --mcp-config + alwaysLoadTools 实验路径，当前未验证能绕过该问题。
+      use-mcp-config-file: false
+      work-dir: ''
+      # 默认要求 Qwen 审批；本地验证可临时设为 yolo（会自动放行工具）
+      approval-mode: default
+      timeout-seconds: 180
 
 # 扣子适配器配置（未使用时可留空）
 coze:

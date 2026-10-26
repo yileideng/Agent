@@ -1,4 +1,4 @@
-package com.agent.demo.clientagent.agent_adaptor;
+package com.agent.demo.clientagent.acp_agent;
 
 import com.agent.demo.clientagent.core.AgentRequest;
 import com.agent.demo.clientagent.core.AgentResponse;
@@ -7,15 +7,21 @@ import com.agent.demo.clientagent.core.AgentStreamSink;
 import java.util.List;
 
 /**
- * Agent适配器接口：不同Agent的接入点，实现可插拔替换。
- * 具体实现放在同包下的 {@code impl} 子包中：
- * - {@code impl.SelfAgentAdaptor}：调用自研Agent服务(AgentBrain)，通过HTTP
- * - {@code impl.CozeAgentAdaptor}：对接扣子托管智能体
- * - {@code impl.CliAgentAdaptor}：封装CLI Agent(Qwen Code / Claude Code)
+ * 网关内部的统一 Agent 运行时接口。
  *
- * 新增一个 Agent 只需实现本接口并声明为 Spring Bean，无需改动客户端与工具链路。
+ * <p>它描述“网关怎么调用一个 Agent”，不是 ACP 线协议。ACP Agent 由
+ * {@code acp.AcpClientAgent} 适配成这个接口；内部 Agent（Self/Coze/CLI）由
+ * 对应的 {@code AgentAdaptor} 实现直接接入。
+ *
+ * <p>实现放在同包下的 {@code impl} 或 {@code acp} 子包中：
+ * - {@code impl.SelfAgentAdaptor}：自研 Agent 服务（HTTP）
+ * - {@code impl.CozeAgentAdaptor}：扣子托管智能体
+ * - {@code impl.CliAgentAdaptor}：CLI Agent（Qwen Code stream-json）
+ * - {@code acp.AcpClientAgent}：原生/外部 ACP Agent（通用）
+ *
+ * <p>新增一个 Agent 只需实现本接口并声明为 Spring Bean；客户端和工具链路不变。
  */
-public interface AgentAdaptor {
+public interface AcpAgent {
 
     /**
      * 适配器名称，供调用方通过参数选择使用哪个Agent

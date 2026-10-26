@@ -287,7 +287,7 @@ default void chatStream(AgentRequest request, AgentStreamSink sink) {
 
 ### 5.3 各 Agent 映射
 
-#### CLI（Qwen Code / Claude Code）
+#### CLI（当前 Qwen Code；Claude Code 需适配）
 
 输入是 `stream-json` 的逐行 JSON：
 

@@ -1,6 +1,6 @@
-package com.agent.demo.clientagent.agent_adaptor.impl;
+package com.agent.demo.clientagent.acp_agent.impl.adaptor;
 
-import com.agent.demo.clientagent.agent_adaptor.AgentAdaptor;
+import com.agent.demo.clientagent.acp_agent.AcpAgent;
 import com.agent.demo.clientagent.core.AgentRequest;
 import com.agent.demo.clientagent.core.AgentSessionStore;
 import com.agent.demo.clientagent.core.AgentResponse;
@@ -23,10 +23,14 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
- * CLI Agent适配器：把 coding CLI(Qwen Code / Claude Code)的headless模式封装为Agent。
- * agent.cli.command指定CLI命令(默认qwen，换claude即可复用)。
+ * CLI Agent适配器：当前以 Qwen Code 为已验证实现，封装其 headless 模式。
  *
- * 原理：每条消息spawn一次 `qwen -p <prompt> --output-format stream-json --resume <cliSessionId>`，
+ * <p>注意：Claude Code 与 Qwen Code 的命令参数并不完全一致，不能只改
+ * {@code agent.cli.command} 就认为可复用：认证参数（{@code --auth-type} /
+ * {@code --openai-api-key} / {@code --openai-base-url}）和 mcp-config 的 JSON 格式
+ * 都不同。接入 Claude Code 需要单独的 CLI profile（认证参数、mcp-config、事件解析）。
+ *
+ * 原理：每条消息spawn一次 `{command} -p <prompt> --output-format stream-json --resume <cliSessionId>`，
  * 解析stdout的stream-json事件流；中间件按 (clientId, sessionId) 持有会话，并映射到CLI自己的sessionId。
  *
  * 已做的隔离/健壮性处理：
@@ -38,7 +42,7 @@ import java.util.concurrent.TimeUnit;
  * todo: CLI的内置工具(读写文件/shell)仍在宿主执行，生产环境需容器沙箱隔离。
  */
 @Component
-public class CliAgentAdaptor implements AgentAdaptor {
+public class CliAgentAdaptor implements AcpAgent {
 
     /** CLI 命令（如 qwen / claude）。 */
     private final String command;
@@ -104,7 +108,7 @@ public class CliAgentAdaptor implements AgentAdaptor {
 
     @Override
     public String description() {
-        return "CLI Agent(Qwen Code / Claude Code)，通过命令行复用成熟Agent能力";
+        return "CLI Agent（当前 Qwen Code；Claude Code 需适配认证与 MCP 配置）";
     }
 
     @Override

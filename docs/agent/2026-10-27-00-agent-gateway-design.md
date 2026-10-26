@@ -585,7 +585,7 @@ sessionId 精确匹配 → (clientId, endUserId, deviceId) 唯一连接 → CLIE
 | `error` | Agent 错误 |
 | `usage` | token/成本统计（可选） |
 
-### 7.2 CLI 适配器（Claude Code / Qwen Code）
+### 7.2 CLI 适配器（当前 Qwen Code；Claude Code 需适配）
 
 - **对话**：`{command} -p <prompt> --output-format stream-json`，逐行解析 JSON 事件。
 - **流式**：`assistant` 文本映射为 CAP `delta`；`thinking` / `thinking_delta` / `reasoning_content` 映射为 CAP `thinking`，两者不混流。
@@ -672,7 +672,7 @@ sessionId 精确匹配 → (clientId, endUserId, deviceId) 唯一连接 → CLIE
 
 | 模块 | 端口 | 职责 | 关键类 |
 |---|---|---|---|
-| `AgentAdaptor` | 8080 | 网关：适配器、会话、工具目录、MCP、WS | [AgentAdaptor.java](../../AgentAdaptor/src/main/java/com/agent/demo/clientagent/agent_adaptor/AgentAdaptor.java)、[ClientRegistry.java](../../AgentAdaptor/src/main/java/com/agent/demo/clientagent/client_registry/ClientRegistry.java)、[WsSessionManager.java](../../AgentAdaptor/src/main/java/com/agent/demo/clientagent/ws/WsSessionManager.java) |
+| `AcpAgent` | 8080 | 网关：统一 Agent 接口、会话、工具目录、MCP、WS | [AcpAgent.java](../../AgentGateway/src/main/java/com/agent/demo/clientagent/acp_agent/AcpAgent.java)、[ClientRegistry.java](../../AgentGateway/src/main/java/com/agent/demo/clientagent/client_registry/ClientRegistry.java)、[WsSessionManager.java](../../AgentGateway/src/main/java/com/agent/demo/clientagent/ws/WsSessionManager.java) |
 | `BrainAgent` | 8081 | 自研 Agent 服务：无状态决策 | [BrainController.java](../../BrainAgent/src/main/java/com/agent/demo/agentbrain/controller/BrainController.java)、[SelfAgentBrain.java](../../BrainAgent/src/main/java/com/agent/demo/agentbrain/service/SelfAgentBrain.java) |
 | `AgentClientSdk` | — | 客户端 SDK：统一 HTTP 回调与 WebSocket 接入，被 Client 依赖 | [AgentClient.java](../../AgentClientSdk/src/main/java/com/agent/demo/agentsdk/AgentClient.java)、[Transport.java](../../AgentClientSdk/src/main/java/com/agent/demo/agentsdk/Transport.java) |
 | `Client` | 8082 | SDK 的示例消费者：注册工具、执行回调、WS 移动端 | [Client.java](../../Client/src/main/java/com/agent/demo/agentclient/client/Client.java)、[MobileClient.java](../../Client/src/main/java/com/agent/demo/agentclient/client/MobileClient.java) |

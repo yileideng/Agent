@@ -1,6 +1,6 @@
-package com.agent.demo.clientagent.agent_adaptor.impl;
+package com.agent.demo.clientagent.acp_agent.impl.adaptor;
 
-import com.agent.demo.clientagent.agent_adaptor.AgentAdaptor;
+import com.agent.demo.clientagent.acp_agent.AcpAgent;
 import com.agent.demo.clientagent.core.AgentRequest;
 import com.agent.demo.clientagent.core.AgentSessionStore;
 import com.agent.demo.clientagent.core.AgentResponse;
@@ -21,7 +21,7 @@ import java.util.List;
  * 智能体的prompt、插件、知识库在扣子平台上配置，代码侧只做对话转发。
  */
 @Component
-public class CozeAgentAdaptor implements AgentAdaptor {
+public class CozeAgentAdaptor implements AcpAgent {
 
     /** 扣子 API Token；为空时适配器不可用。 */
     private final String apiToken;

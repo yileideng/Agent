@@ -39,7 +39,7 @@
 
 补充说明：
 
-- **为什么不用 ACP 作为主协议**：ACP 面向"IDE/编辑器驱动 Agent"，工具调用在 Agent 侧；本项目工具在客户端侧且需要远程执行，MCP 更贴合。未来若接入 VS Code 类客户端，可再加 ACP 入口。
+- **ACP 与 CAP 的关系**：ACP（Agent Client Protocol）是“客户端宿主 Agent”的协议，当前 spec 主要面向编辑器，但客户端不限于编辑器；本项目把它泛化到各种客户端，用 CAP 承载客户端侧契约。当前 CAP 是 ACP 思路的泛化实现，不是 ACP 线协议兼容：CAP 是 HTTP/WS + `v/id/type/payload`，ACP 是 JSON-RPC 的 `initialize/session/prompt/update/request_permission`。若要对齐 ACP 生态，需要单独加 ACP 适配入口，而不是把 CAP 直接改名为 ACP。
 - **为什么不让 Agent 直连客户端**：需要中间件做鉴权、工具裁剪、审计、限流、多租户路由，否则每个客户端都要自己对接每种 Agent。
 
 ---
@@ -311,7 +311,7 @@ public record AgentRequest(String clientId, String userPrompt,
 | name | 说明 |
 |---|---|
 | `self` | 自研 Agent 服务，HTTP 调 `BrainAgent` 的 `/v1/brain/chat`，由中间件执行 Agent Loop（默认） |
-| `cli` | 复用 Qwen Code / Claude Code 子进程，经 MCP 发现并调用客户端工具 |
+| `cli` | 复用 Qwen Code 子进程（已验证），经 MCP 发现并调用客户端工具；Claude Code 需先适配认证参数与 mcp-config 格式 |
 | `coze` | 扣子低代码智能体，能力在扣子平台配置 |
 
 `self` 适配器在中间件内完成完整 Agent Loop：调用 Agent 得到 `CLIENT_TOOL_CALL` → `ClientRegistry` 回调客户端执行 → 结果回传 Agent → 直到 `FINAL_OUTPUT`，并受 `agent.self.max-steps` 限制。
@@ -450,12 +450,12 @@ qwen -p <prompt> --output-format stream-json \
 
 | 优先级 | 问题 | 位置 | 影响 |
 |---|---|---|---|
-| P0 | 注册接口与 `/mcp` 无鉴权，`clientId` 仍由调用方自报 | [ClientToolController.java](../../AgentAdaptor/src/main/java/com/agent/demo/clientagent/controller/ClientToolController.java) / [McpServerController.java](../../AgentAdaptor/src/main/java/com/agent/demo/clientagent/controller/McpServerController.java) | 可冒充任意客户端；接入 token 后才能作为真实租户边界 |
-| P0 | `callbackUrl` 未做域名白名单，存在 SSRF 风险 | [ClientRegistry.java](../../AgentAdaptor/src/main/java/com/agent/demo/clientagent/client_registry/ClientRegistry.java) | 可回调内网地址 |
+| P0 | 注册接口与 `/mcp` 无鉴权，`clientId` 仍由调用方自报 | [ClientToolController.java](../../AgentGateway/src/main/java/com/agent/demo/clientagent/controller/ClientToolController.java) / [McpServerController.java](../../AgentGateway/src/main/java/com/agent/demo/clientagent/controller/McpServerController.java) | 可冒充任意客户端；接入 token 后才能作为真实租户边界 |
+| P0 | `callbackUrl` 未做域名白名单，存在 SSRF 风险 | [ClientRegistry.java](../../AgentGateway/src/main/java/com/agent/demo/clientagent/client_registry/ClientRegistry.java) | 可回调内网地址 |
 | P0 | 用户数据放在静态字段 `Client.name` | [Client.java](../../Client/src/main/java/com/agent/demo/agentclient/client/Client.java) | 多客户端场景会互相污染（仅演示客户端） |
-| P1 | CLI 在宿主直接运行，可读写宿主目录 | [CliAgentAdaptor.java](../../AgentAdaptor/src/main/java/com/agent/demo/clientagent/agent_adaptor/impl/CliAgentAdaptor.java) | 越权、逃逸；已有独立工作目录但未沙箱 |
-| P1 | 模型 API Key 明文写在 `application.yml` | [application.yml](../../AgentAdaptor/src/main/resources/application.yml) | 泄露风险（仓库公开） |
-| P2 | 会话来内存态，重启即丢 | [AgentSessionStore.java](../../AgentAdaptor/src/main/java/com/agent/demo/clientagent/core/AgentSessionStore.java) | 无法水平扩展/故障恢复 |
+| P1 | CLI 在宿主直接运行，可读写宿主目录 | [CliAgentAdaptor.java](../../AgentGateway/src/main/java/com/agent/demo/clientagent/acp_agent/impl/CliAgentAdaptor.java) | 越权、逃逸；已有独立工作目录但未沙箱 |
+| P1 | 模型 API Key 明文写在 `application.yml` | [application.yml](../../AgentGateway/src/main/resources/application.yml) | 泄露风险（仓库公开） |
+| P2 | 会话来内存态，重启即丢 | [AgentSessionStore.java](../../AgentGateway/src/main/java/com/agent/demo/clientagent/core/AgentSessionStore.java) | 无法水平扩展/故障恢复 |
 | P2 | 工具调用无超时/重试/审计 | Tool Router 缺失 | 生产不可用 |
 
 已完成的历史问题：全局 `Map<name, tool>` 已被 `(clientId, name)` 工具目录替代；`/chat` 已支持 `sessionId` 多轮；`sessionMap` 无上限无过期已由 `AgentSessionStore` + TTL 清理解决；MockAgent 与进程内 Client 已拆除，`agent_brain` 与 `client` 已拆为独立模块。
