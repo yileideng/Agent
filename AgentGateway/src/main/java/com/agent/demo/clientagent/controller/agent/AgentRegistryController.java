@@ -21,7 +21,7 @@ import java.util.Optional;
 /**
  * 外部 ACP Agent 注册管理接口。
  *
- * 当前注册只支持 {@link AcpAgentDescriptor.Transport#STDIO}。
+ * 外部 Agent 由外部服务提供，注册只包含 WS 地址；Gateway 不在本地启动进程。
  */
 @RestController
 @RequestMapping("/admin/agents")
@@ -40,10 +40,9 @@ public class AgentRegistryController {
      * <pre>{@code
      * {
      *   "agentId": "remote-qwen",
-     *   "transport": "STDIO",
-     *   "command": "qwen",
-     *   "args": ["--acp"],
-     *   "mcpUrl": "http://localhost:8080/mcp"
+     *   "wsUrl": "wss://agent.example.com/acp",
+     *   "authToken": "optional-bearer-token",
+     *   "mcpUrl": "https://gateway.example.com/mcp"
      * }
      * }</pre>
      */

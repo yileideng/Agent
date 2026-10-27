@@ -1,7 +1,7 @@
 # AcpAgent 架构改造技术方案
 
 > 目标：把“协议适配”和“Agent 注册”收敛成一套接口，支持 ACP Agent、外部 ACP Server 和内部 Adaptor
-> 状态：**Phase 1/2 已实施；AgentRouter 与外部 ACP Agent 注册接口已实现；文本/流式通过，MCP 工具受 Qwen 0.26 ACP 限制**
+> 状态：**Phase 1/2 已实施；AgentRouter 与 WS-only 外部注册已落地；文本/流式通过，MCP 工具受 Qwen 0.26 ACP 限制**
 > 相关：[Qwen ACP 验证方案](./2026-10-27-13-qwen-acp-validation-plan.md)、[ACP 对齐方案](./2026-10-27-13-acp-alignment-plan.md)
 
 ![Agent 网关架构](../assets/agent-gateway-architecture.png)
@@ -311,47 +311,72 @@ Gateway → Agent: MCP content
 - `ChatController` 不再直接依赖 `AcpAgentRegistry`；
 - 未知/不可用 Agent 返回 CAP `AGENT_UNAVAILABLE`。
 
-### 12.2 外部 ACP Agent 注册
+### 12.2 外部 ACP Agent 注册（简化版）
 
-新增：
+核心可以很轻：
 
-- `AcpAgentDescriptor`
-- `AcpAgentFactory`
-- `AcpAgentRegistry.register/unregister`
-- `controller/admin/AgentRegistryController`
+> 外部 Agent 注册时给一个 WS 地址，`AcpClientAgent` 连上去，按 ACP JSON-RPC 调用即可。
 
-接口：
+没必要为一个 WS 地址再拆出 `AcpRemoteAgent`、`InternalAgentProfile` 等一整套类。
 
-```text
-POST   /admin/agents          注册
-GET    /admin/agents          列表（内置 + 外部）
-DELETE /admin/agents/{id}     注销
-```
-
-注册示例：
+#### 外部注册 descriptor
 
 ```json
 {
-  "agentId": "external-qwen",
-  "transport": "STDIO",
-  "command": "qwen",
-  "args": ["--acp"],
-  "mcpUrl": "http://localhost:8080/mcp"
+  "agentId": "remote-qwen",
+  "wsUrl": "wss://agent.example.com/acp",
+  "authToken": "optional-bearer-token",
+  "mcpUrl": "https://gateway.example.com/mcp"
 }
 ```
 
-验证：
+- 没有 `command`、`args`、`env`、`workDir`；
+- 外部服务自己负责 Agent 进程；
+- Gateway 只负责连接。
 
-- 注册返回 201；
-- `/admin/agents` 能看到 `source=EXTERNAL`；
-- `/agents` 能看到外部 Agent；
-- 重复注册返回 409；
-- 删除返回 204；
-- 未知 Agent 请求 `/chat` 返回 `AGENT_UNAVAILABLE`。
+#### 代码结构
 
-限制：
+```text
+AcpClientAgent
+  └── AcpConnection（接口）
+      ├── StdioAcpConnection   // 内置 Qwen 等本地进程
+      └── WsAcpConnection      // 外部 WS Server
+```
 
-- 当前只支持 `transport=STDIO`；`WS` 会返回 400；
-- 管理接口尚未接管理员鉴权，正式部署必须放在内网/网关后；
-- 外部注册允许 `command`，存在 RCE 风险，需要 allowlist/沙箱；
-- 注册是内存态，重启后丢失。
+`AcpSession` 继续复用 `AcpConnection` 的 `request/notify/respond` 接口；只是把现在的 stdio 实现抽成接口，加一个 WS 实现。
+
+不需要：
+
+- `AcpRemoteAgent` 单独类；
+- `InternalAgentProfile` / `ExternalAgentRegistration` 双 descriptor；
+- 外部注册后再在 Gateway 本地启动进程。
+
+#### 已实现
+
+1. `AcpConnection` 抽成接口（`request` / `onNotification` / `onRequest` / `respond` / `close`）；
+2. 现有 stdio 逻辑改名为 `StdioAcpConnection`；
+3. 新增 `WsAcpConnection`：
+   - 连接 `ws://` / `wss://`；
+   - 每个 WebSocket text frame 放一条 JSON-RPC；
+   - 复用 `AcpSession` 的 initialize/session/prompt/update；
+4. `AcpClientAgent` 根据 profile 是否有 `wsUrl` 选择 `Stdio` 或 `Ws`；
+5. `/admin/agents` 只接收 `agentId/wsUrl/authToken/mcpUrl`，没有 `command/args`。
+
+验证结果：
+
+- 内置 `qwen-acp` 文本对话仍通过；
+- `POST /admin/agents` 注册 WS Agent 返回 201；
+- `/agents` 能看到外部的 `available=true`；
+- 没有 WS Server 时 `/chat` 返回 `ACP_ERROR: 连接 ACP WS 失败`，不会退回本地启动；
+- 删除外部 Agent 返回 204。
+
+本地 Qwen Code WS Server（`AcpAgentServer`）联调已通过：
+
+- AcpAgentServer 启动后自动注册 `ws://localhost:8095/acp` 到 `http://localhost:8080`；
+- 非流式返回“WS测试”；
+- SSE delta/final 正常；
+- 同一 session 多轮可延续上下文。
+
+详见 [AcpAgentServer 验证服务](./2026-10-27-15-acp-agent-server.md)。
+
+之前写的“外部/内置双 descriptor + RemoteAgent”属于过度设计，不采用。

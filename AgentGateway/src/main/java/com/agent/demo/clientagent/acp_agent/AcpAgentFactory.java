@@ -10,7 +10,7 @@ import java.util.List;
 /**
  * 把外部注册的 {@link AcpAgentDescriptor} 转换成可调用的 {@link AcpAgent}。
  *
- * <p>当前只实现 STDIO；WS 远程传输等 AcpConnection 增加 WebSocket 后再开放。
+ * <p>外部 Agent 只通过 WebSocket 连接，不在 Gateway 本地启动进程。
  */
 @Component
 public class AcpAgentFactory {
@@ -25,20 +25,21 @@ public class AcpAgentFactory {
         validate(descriptor);
         AcpAgentProfile profile = new AcpAgentProfile(
                 descriptor.agentId(),
-                descriptor.command(),
-                blankToNull(descriptor.nodePath()),
-                blankToNull(descriptor.authType()),
-                blankToNull(descriptor.apiKey()),
-                blankToNull(descriptor.baseUrl()),
-                blankToNull(descriptor.model()),
-                defaultIfBlank(descriptor.mcpUrl(), "http://localhost:8080/mcp"),
-                defaultIfBlank(descriptor.mcpServerName(), "client-tools"),
-                blankToNull(descriptor.workDir()),
-                blankToNull(descriptor.approvalMode()),
-                descriptor.timeoutSeconds() != null && descriptor.timeoutSeconds() > 0
-                        ? descriptor.timeoutSeconds() : 180,
-                Boolean.TRUE.equals(descriptor.useMcpConfigFile()),
-                descriptor.args() == null ? List.of() : List.copyOf(descriptor.args()));
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                blankToNull(descriptor.mcpUrl()),
+                "client-tools",
+                null,
+                null,
+                180,
+                false,
+                List.of(),
+                descriptor.wsUrl(),
+                descriptor.authToken());
         return new AcpClientAgent(profile, sessionStore);
     }
 
@@ -49,19 +50,12 @@ public class AcpAgentFactory {
         if (descriptor.agentId() == null || !descriptor.agentId().matches("[a-zA-Z0-9._-]{1,64}")) {
             throw new IllegalArgumentException("agentId 只能是 1-64 位字母、数字、点、下划线、短横线");
         }
-        if (descriptor.transport() != AcpAgentDescriptor.Transport.STDIO) {
-            throw new IllegalArgumentException("当前只支持 transport=STDIO；WS ACP Server 传输尚未实现");
-        }
-        if (descriptor.command() == null || descriptor.command().isBlank()) {
-            throw new IllegalArgumentException("command 不能为空");
+        if (descriptor.wsUrl() == null || !descriptor.wsUrl().matches("^wss?://.+")) {
+            throw new IllegalArgumentException("wsUrl 必须是 ws:// 或 wss:// 地址");
         }
     }
 
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value;
-    }
-
-    private String defaultIfBlank(String value, String fallback) {
-        return value == null || value.isBlank() ? fallback : value;
     }
 }

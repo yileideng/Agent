@@ -58,7 +58,9 @@ public final class AcpSession implements AutoCloseable {
             // 已通过 --mcp-config 注入，session/new 不再重复声明，避免同名 MCP 冲突
             sessionServers = objectMapper.createArrayNode();
         }
-        AcpConnection conn = new AcpConnection(profile, extraArgs);
+        AcpConnection conn = profile.wsUrl() != null && !profile.wsUrl().isBlank()
+                ? new WsAcpConnection(profile)
+                : new StdioAcpConnection(profile, extraArgs);
         conn.onNotification(this::handleNotification);
         conn.onRequest(this::handleRequest);
         conn.start(cwd);

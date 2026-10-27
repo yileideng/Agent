@@ -53,7 +53,7 @@ public class AcpClientAgent implements AcpAgent {
         this.profile = new AcpAgentProfile(
                 agentId, command, nodePath, authType, apiKey, baseUrl, model,
                 mcpUrl, mcpServerName, workDir, approvalMode, timeoutSeconds, useMcpConfigFile,
-                List.of("--acp"));
+                List.of("--acp"), null, null);
     }
 
     /**
@@ -72,7 +72,9 @@ public class AcpClientAgent implements AcpAgent {
 
     @Override
     public String description() {
-        return "ACP Agent（stdio JSON-RPC，通用 AcpClientAgent）";
+        return profile.wsUrl() != null && !profile.wsUrl().isBlank()
+                ? "ACP Agent（WebSocket，通用 AcpClientAgent）"
+                : "ACP Agent（stdio JSON-RPC，通用 AcpClientAgent）";
     }
 
     @Override
@@ -82,16 +84,18 @@ public class AcpClientAgent implements AcpAgent {
 
     @Override
     public boolean available() {
-        return enabled && profile.command() != null && !profile.command().isBlank();
+        return enabled && ((profile.command() != null && !profile.command().isBlank())
+                || (profile.wsUrl() != null && !profile.wsUrl().isBlank()));
     }
 
     @Override
     public String unavailableReason() {
         if (!enabled) {
-            return "agent.acp.qwen.enabled=false";
+            return "agent 未启用";
         }
-        if (profile.command() == null || profile.command().isBlank()) {
-            return "未配置 agent.acp.qwen.command";
+        if ((profile.command() == null || profile.command().isBlank())
+                && (profile.wsUrl() == null || profile.wsUrl().isBlank())) {
+            return "未配置 command 或 wsUrl";
         }
         return null;
     }

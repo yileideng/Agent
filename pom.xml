@@ -18,5 +18,7 @@
         <module>AgentClientSdk</module>
         <!-- 自研客户端：SDK 的示例消费者，注册工具、执行工具回调、发起对话 -->
         <module>Client</module>
+        <!-- 本地 Qwen Code ACP WebSocket Server：模拟外部 ACP Agent Server -->
+        <module>AcpAgentServer</module>
     </modules>
 </project>

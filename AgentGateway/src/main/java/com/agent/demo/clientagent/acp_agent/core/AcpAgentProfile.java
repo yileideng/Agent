@@ -21,7 +21,9 @@ import java.util.List;
  * @param approvalMode 可选，Qwen 的 --approval-mode
  * @param timeoutSeconds 单轮 prompt 超时
  * @param useMcpConfigFile 是否用 --mcp-config 文件注入 MCP（Qwen ACP 的兼容开关）
- * @param args         启动参数；Qwen 传 ["--acp"]，外部 ACP Server 按自身 CLI 传参
+ * @param args         启动参数；Qwen 传 ["--acp"]
+ * @param wsUrl        外部 ACP Server 地址；非空时使用 WsAcpConnection
+ * @param authToken    可选，WS Authorization: Bearer token
  */
 public record AcpAgentProfile(
         String agentId,
@@ -37,5 +39,7 @@ public record AcpAgentProfile(
         String approvalMode,
         long timeoutSeconds,
         boolean useMcpConfigFile,
-        List<String> args) {
+        List<String> args,
+        String wsUrl,
+        String authToken) {
 }
