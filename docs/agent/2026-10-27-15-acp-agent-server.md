@@ -55,8 +55,6 @@ server:
 gateway:
   admin-url: 'http://localhost:8080'
   auto-register: true
-  register-retry-ms: 5000
-  re-register-ms: 30000
 
 agent:
   id: 'local-ws-qwen'
@@ -66,7 +64,7 @@ qwen:
   command: 'D:\nodejs\node_global\qwen.cmd'
   node-path: 'D:\nvm\v22.14.0'
   auth-type: openai
-  api-key: ${AGENT_ACP_API_KEY:}
+  api-key: '<demo-key>'
   base-url: 'https://dashscope.aliyuncs.com/compatible-mode/v1'
   model: qwen-plus
   approval-mode: default
@@ -79,8 +77,9 @@ $env:AGENT_ACP_API_KEY = '<key>'
 mvn -q -pl AcpAgentServer spring-boot:run
 ```
 
-> 如果未设置 `AGENT_ACP_API_KEY`，`QwenAcpProcessFactory` 会回退到 `OPENAI_API_KEY`。
-> 两个都没有时，Qwen 会在 `session/new` 返回 `Authentication required: Missing API key`。
+> demo 配置里直接复用 Gateway 的 key；也可以改成环境变量，或在 AcpAgentServer 进程里设置
+> `AGENT_ACP_API_KEY` / `OPENAI_API_KEY`。Qwen 拿不到 key 时会在 `session/new` 返回
+> `Authentication required: Missing API key`。
 
 启动后会自动向 Gateway 注册：
 
@@ -91,10 +90,10 @@ POST http://localhost:8080/admin/agents
 
 行为：
 
-- 注册失败每 5 秒重试；
-- 注册成功每 30 秒重放一次，防止 Gateway 重启后内存 Registry 丢失；
-- 关闭时尽力调用 `DELETE /admin/agents/local-ws-qwen`；
-- Gateway 未启动时会持续重试，不阻塞 Agent Server 启动。
+- 启动时最多尝试 3 次，每次间隔 2 秒；
+- 成功或 409 已存在即停止；
+- 注册失败只打印日志，不阻塞 Agent Server 启动；
+- 不做周期重放、不自动注销，保持 demo 简单。
 
 ## 4. 调用
 
@@ -138,16 +137,14 @@ Authentication required: Missing API key for openai auth
 
 说明 AcpAgentServer 启动时没有拿到 key。检查：
 
-1. 启动 AcpAgentServer 的进程是否设置了 `AGENT_ACP_API_KEY`；
-2. 或者设置 `OPENAI_API_KEY` 作为回退；
+1. `AcpAgentServer/src/main/resources/application.yml` 的 `qwen.api-key` 是否为空；
+2. 或启动 AcpAgentServer 的进程是否设置了 `AGENT_ACP_API_KEY` / `OPENAI_API_KEY`；
 3. IDE 直接 Run 时，环境变量不会自动继承终端里的设置；
 4. 不要只给 Gateway 设置 key，AcpAgentServer 是独立进程。
 
 ## 8. 代码位置
 
 - `AcpAgentServerApplication`
-- `ws/AcpWebSocketHandler`
-- `ws/WebSocketConfig`
-- `qwen/QwenAcpProcess`
-- `qwen/QwenAcpProcessFactory`
-- `register/AgentAutoRegistrar`
+- `AcpWebSocketHandler`：WS 入口 + Qwen 进程代理
+- `WebSocketConfig`：注册 `/acp`
+- `AutoRegister`：启动时注册到 Gateway

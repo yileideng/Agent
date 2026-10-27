@@ -6,24 +6,21 @@ server:
   port: 8095
 
 gateway:
-  # 娴嬭瘯 demo锛氶粯璁?Gateway 鍦板潃
+  # Gateway 地址；启动后自动注册，失败最多重试 3 次
   admin-url: 'http://localhost:8080'
   auto-register: true
-  register-retry-ms: 5000
-  # 鍛ㄦ湡鎬ч噸鏀炬敞鍐岋紝闃叉 Gateway 閲嶅惎鍚庡唴瀛?Registry 涓㈠け
-  re-register-ms: 30000
 
 agent:
   id: 'local-ws-qwen'
-  # 蹇呴』鏄?Gateway 鑳借闂埌鐨勫湴鍧€锛涘悓鏈烘祴璇曞彲鐢?localhost
+  # 必须是 Gateway 能访问到的地址；同机测试可用 localhost
   public-ws-url: 'ws://localhost:8095/acp'
 
 qwen:
-  # 鏈満 Qwen Code CLI锛涚敓浜х幆澧冨簲鐢卞閮?Agent 鏈嶅姟鑷繁閮ㄧ讲
+  # 本地 Qwen Code CLI；真实外部 Agent 由外部服务自己提供
   command: 'D:\nodejs\node_global\qwen.cmd'
   node-path: 'D:\nvm\v22.14.0'
   auth-type: openai
-  # 涓嶈鎶?key 鍐欒繘浠撳簱锛涘惎鍔ㄦ椂鐢?AGENT_ACP_API_KEY 娉ㄥ叆锛?  # 鏈缃椂 QwenAcpProcessFactory 浼氬洖閫€鍒?OPENAI_API_KEY
+  # demo 直接复用 Gateway 的 key；生产应改用环境变量/密钥管理
   api-key: 'sk-7aee717a3e024c4aa6ad8d87087d5d48'
   base-url: 'https://dashscope.aliyuncs.com/compatible-mode/v1'
   model: qwen-plus
