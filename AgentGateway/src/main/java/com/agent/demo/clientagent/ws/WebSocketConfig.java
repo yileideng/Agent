@@ -13,15 +13,15 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 @EnableWebSocket
 public class WebSocketConfig implements WebSocketConfigurer {
 
-    private final AgentWebSocketHandler agentWebSocketHandler;
+    private final ClientWebSocketHandler clientWebSocketHandler;
 
-    public WebSocketConfig(AgentWebSocketHandler agentWebSocketHandler) {
-        this.agentWebSocketHandler = agentWebSocketHandler;
+    public WebSocketConfig(ClientWebSocketHandler clientWebSocketHandler) {
+        this.clientWebSocketHandler = clientWebSocketHandler;
     }
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        registry.addHandler(agentWebSocketHandler, "/ws/agent")
+        registry.addHandler(clientWebSocketHandler, "/ws/agent")
                 .setAllowedOriginPatterns("*");
     }
 }

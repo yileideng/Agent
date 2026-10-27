@@ -3,30 +3,41 @@ package com.agent.demo.clientagent.acp_agent;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
-import java.util.stream.Collectors;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
- * AcpAgent 注册表：收集容器内所有 {@link AcpAgent} 实现，按名称提供给网关选择。
+ * AcpAgent 注册表：同时管理内置 Agent（Spring Bean）和外部注册的 ACP Agent。
  *
- * <p>当前以 Spring Bean 注册为主；外部 ACP Agent 的 descriptor 注册在后续阶段加入。
+ * <p>内置 Agent 只读；外部 Agent 通过 {@link #register} 动态加入，通过
+ * {@link #unregister} 移除。Registry 只保存描述和实例，不持有进程。
  */
 @Component
 public class AcpAgentRegistry {
 
-    /** Agent 名称 -> 实现。 */
-    private final Map<String, AcpAgent> agents;
+    /** 内置 Agent：应用启动时由 Spring 注入，不允许外部注销。 */
+    private final Map<String, AcpAgent> internal;
+    /** 外部分 Agent：运行时注册。 */
+    private final ConcurrentMap<String, AcpAgent> external = new ConcurrentHashMap<>();
+    /** 外部 Agent 的原始描述，查询/管理接口使用，不返回 apiKey。 */
+    private final ConcurrentMap<String, AcpAgentDescriptor> externalDescriptors = new ConcurrentHashMap<>();
     /** 请求未指定 agent 时使用的默认 Agent 名称。 */
     private final String defaultAgent;
+    private final AcpAgentFactory factory;
 
     public AcpAgentRegistry(List<AcpAgent> agentList,
+                            AcpAgentFactory factory,
                             @Value("${agent.default-adaptor:mock}") String defaultAgent) {
-        this.agents = agentList.stream()
-                .collect(Collectors.toMap(AcpAgent::name, Function.identity(),
-                        (first, second) -> first, LinkedHashMap::new));
+        this.factory = factory;
+        this.internal = new LinkedHashMap<>();
+        for (AcpAgent agent : agentList) {
+            this.internal.put(agent.name(), agent);
+        }
         this.defaultAgent = defaultAgent;
     }
 
@@ -35,18 +46,74 @@ public class AcpAgentRegistry {
      */
     public AcpAgent get(String name) {
         String key = (name == null || name.isEmpty()) ? defaultAgent : name;
-        AcpAgent agent = agents.get(key);
+        AcpAgent agent = internal.get(key);
         if (agent == null) {
-            throw new IllegalArgumentException("未知的agent: " + key + "，可选值: " + agents.keySet());
+            agent = external.get(key);
+        }
+        if (agent == null) {
+            throw new IllegalArgumentException("未知的agent: " + key + "，可选值: " + names());
         }
         return agent;
+    }
+
+    /**
+     * 注册一个外部 ACP Agent；agentId 必须全局唯一。
+     */
+    public synchronized AcpAgent register(AcpAgentDescriptor descriptor) {
+        String agentId = descriptor == null ? null : descriptor.agentId();
+        if (agentId != null && (internal.containsKey(agentId) || external.containsKey(agentId))) {
+            throw new IllegalArgumentException("agentId 已存在: " + agentId);
+        }
+        AcpAgent agent = factory.create(descriptor);
+        external.put(agent.name(), agent);
+        externalDescriptors.put(agent.name(), descriptor);
+        return agent;
+    }
+
+    /**
+     * 注销外部 Agent；内置 Agent 不允许注销。
+     *
+     * @return 被移除的 Agent；不存在时为 empty
+     */
+    public synchronized Optional<AcpAgent> unregister(String agentId) {
+        if (agentId == null || agentId.isBlank()) {
+            return Optional.empty();
+        }
+        if (internal.containsKey(agentId)) {
+            throw new IllegalArgumentException("内置 Agent 不能注销: " + agentId);
+        }
+        externalDescriptors.remove(agentId);
+        AcpAgent removed = external.remove(agentId);
+        if (removed != null) {
+            removed.close();
+        }
+        return Optional.ofNullable(removed);
     }
 
     /**
      * 返回所有已注册的 Agent，供 /agents 能力发现接口使用。
      */
     public List<AcpAgent> all() {
-        return List.copyOf(agents.values());
+        List<AcpAgent> result = new ArrayList<>(internal.values());
+        result.addAll(external.values());
+        return List.copyOf(result);
+    }
+
+    /**
+     * 外部 Agent 描述；管理接口使用。
+     */
+    public List<AcpAgentDescriptor> externalDescriptors() {
+        return List.copyOf(externalDescriptors.values());
+    }
+
+    public boolean isInternal(String agentId) {
+        return internal.containsKey(agentId);
+    }
+
+    public List<String> names() {
+        List<String> names = new ArrayList<>(internal.keySet());
+        names.addAll(external.keySet());
+        return List.copyOf(names);
     }
 
     /**

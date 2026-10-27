@@ -1,7 +1,7 @@
-package com.agent.demo.clientagent.controller;
+package com.agent.demo.clientagent.controller.client;
 
 import com.agent.demo.clientagent.acp_agent.AcpAgent;
-import com.agent.demo.clientagent.acp_agent.AcpAgentRegistry;
+import com.agent.demo.clientagent.acp_agent.AgentRouter;
 import com.agent.demo.clientagent.core.AgentRequest;
 import com.agent.demo.clientagent.core.AgentResponse;
 import com.agent.demo.clientagent.core.AgentStreamSink;
@@ -149,8 +149,8 @@ public class ChatController {
     public record ErrorPayload(String code, String message) {
     }
 
-    /** Agent 注册表，用于按名称选择 Agent。 */
-    private final AcpAgentRegistry acpAgentRegistry;
+    /** Agent 路由层：按名称解析并校验可用性。 */
+    private final AgentRouter agentRouter;
     /** 请求未带 clientId 时使用的默认客户端。 */
     private final String defaultClientId;
 
@@ -166,9 +166,9 @@ public class ChatController {
         return thread;
     });
 
-    public ChatController(AcpAgentRegistry acpAgentRegistry,
+    public ChatController(AgentRouter agentRouter,
                           @Value("${agent.default-client-id:agent-client}") String defaultClientId) {
-        this.acpAgentRegistry = acpAgentRegistry;
+        this.agentRouter = agentRouter;
         this.defaultClientId = defaultClientId;
     }
 
@@ -223,9 +223,9 @@ public class ChatController {
 
         AcpAgent adaptor;
         try {
-            adaptor = acpAgentRegistry.get(agent);
+            adaptor = agentRouter.resolve(agent);
         } catch (Exception e) {
-            return error(id, "INVALID_REQUEST", e.getMessage());
+            return error(id, "AGENT_UNAVAILABLE", e.getMessage());
         }
 
         AgentRequest agentRequest = new AgentRequest(
@@ -236,7 +236,7 @@ public class ChatController {
         }
 
         try {
-            AgentResponse result = adaptor.chat(agentRequest);
+            AgentResponse result = agentRouter.chat(agentRequest, adaptor.name());
             return ResponseEntity.ok(new FinalEnvelope("0.1", responseId, "final",
                     new FinalPayload(result.sessionId(), chatId, adaptor.name(), result.output())));
         } catch (Exception e) {
@@ -293,7 +293,7 @@ public class ChatController {
         try {
             streamExecutor.execute(() -> {
                 try {
-                    adaptor.chatStream(request, sink);
+                    agentRouter.stream(request, adaptor.name(), sink);
                 } catch (Exception e) {
                     sink.error("AGENT_ERROR", e.getMessage());
                 }

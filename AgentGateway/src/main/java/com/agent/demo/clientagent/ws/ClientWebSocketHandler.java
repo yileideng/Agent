@@ -22,7 +22,7 @@ import java.util.UUID;
  * </ul>
  */
 @Component
-public class AgentWebSocketHandler extends TextWebSocketHandler {
+public class ClientWebSocketHandler extends TextWebSocketHandler {
 
     /**
      * 所有 WS 消息的统一信封。
@@ -77,7 +77,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
     /** JSON 编解码（WebSocket 帧不是 Spring MVC 请求，手动处理）。 */
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public AgentWebSocketHandler(WsSessionManager wsSessionManager) {
+    public ClientWebSocketHandler(WsSessionManager wsSessionManager) {
         this.wsSessionManager = wsSessionManager;
     }
 

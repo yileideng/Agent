@@ -78,4 +78,11 @@ public interface AcpAgent {
             sink.error("AGENT_ERROR", e.getMessage());
         }
     }
+
+    /**
+     * 释放 Agent 资源（子进程/会话）；内置 Bean 由 Spring 生命周期管理，
+     * 外部注册的 Agent 在注销时由 Registry 调用。
+     */
+    default void close() {
+    }
 }

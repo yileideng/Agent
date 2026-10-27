@@ -1,7 +1,7 @@
 # AcpAgent 架构改造技术方案
 
 > 目标：把“协议适配”和“Agent 注册”收敛成一套接口，支持 ACP Agent、外部 ACP Server 和内部 Adaptor
-> 状态：**Phase 1/2 已实施；文本/流式通过，MCP 工具受 Qwen 0.26 ACP 限制**
+> 状态：**Phase 1/2 已实施；AgentRouter 与外部 ACP Agent 注册接口已实现；文本/流式通过，MCP 工具受 Qwen 0.26 ACP 限制**
 > 相关：[Qwen ACP 验证方案](./2026-10-27-13-qwen-acp-validation-plan.md)、[ACP 对齐方案](./2026-10-27-13-acp-alignment-plan.md)
 
 ![Agent 网关架构](../assets/agent-gateway-architecture.png)
@@ -299,3 +299,59 @@ Gateway → Agent: MCP content
 - 用 `AcpClientAgent` 接 Qwen `--acp`；
 - 保持 CAP 客户端不变；
 - 验证通过后再决定是否开放外部注册。
+
+## 12. 已实现：AgentRouter 与外部注册
+
+### 12.1 AgentRouter
+
+新增 `acp_agent.AgentRouter`：
+
+- `resolve(agentId)`：从 `AcpAgentRegistry` 取 Agent，并检查 `available()`；
+- `chat/stream`：按 agentId 路由；
+- `ChatController` 不再直接依赖 `AcpAgentRegistry`；
+- 未知/不可用 Agent 返回 CAP `AGENT_UNAVAILABLE`。
+
+### 12.2 外部 ACP Agent 注册
+
+新增：
+
+- `AcpAgentDescriptor`
+- `AcpAgentFactory`
+- `AcpAgentRegistry.register/unregister`
+- `controller/admin/AgentRegistryController`
+
+接口：
+
+```text
+POST   /admin/agents          注册
+GET    /admin/agents          列表（内置 + 外部）
+DELETE /admin/agents/{id}     注销
+```
+
+注册示例：
+
+```json
+{
+  "agentId": "external-qwen",
+  "transport": "STDIO",
+  "command": "qwen",
+  "args": ["--acp"],
+  "mcpUrl": "http://localhost:8080/mcp"
+}
+```
+
+验证：
+
+- 注册返回 201；
+- `/admin/agents` 能看到 `source=EXTERNAL`；
+- `/agents` 能看到外部 Agent；
+- 重复注册返回 409；
+- 删除返回 204；
+- 未知 Agent 请求 `/chat` 返回 `AGENT_UNAVAILABLE`。
+
+限制：
+
+- 当前只支持 `transport=STDIO`；`WS` 会返回 400；
+- 管理接口尚未接管理员鉴权，正式部署必须放在内网/网关后；
+- 外部注册允许 `command`，存在 RCE 风险，需要 allowlist/沙箱；
+- 注册是内存态，重启后丢失。

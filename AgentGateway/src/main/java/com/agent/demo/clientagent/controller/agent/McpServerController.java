@@ -1,4 +1,4 @@
-package com.agent.demo.clientagent.controller;
+package com.agent.demo.clientagent.controller.agent;
 
 import com.agent.demo.clientagent.client_registry.ClientRegistry;
 import com.agent.demo.clientagent.client_registry.ToolDefinition;

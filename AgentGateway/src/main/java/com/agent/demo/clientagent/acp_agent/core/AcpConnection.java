@@ -156,7 +156,9 @@ public final class AcpConnection implements AutoCloseable {
             cmd.add("/c");
         }
         cmd.add(profile.command());
-        cmd.add("--acp");
+        if (profile.args() != null && !profile.args().isEmpty()) {
+            cmd.addAll(profile.args());
+        }
         cmd.addAll(extraArgs);
         if (profile.useMcpConfigFile()) {
             cmd.add("--allowed-mcp-server-names");

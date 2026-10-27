@@ -8,6 +8,7 @@ import com.agent.demo.clientagent.core.AgentResponse;
 import com.agent.demo.clientagent.core.AgentSessionStore;
 import com.agent.demo.clientagent.core.AgentStreamSink;
 import jakarta.annotation.PreDestroy;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -30,6 +31,7 @@ public class AcpClientAgent implements AcpAgent {
     private final boolean enabled;
     private final Map<String, AcpSession> sessions = new ConcurrentHashMap<>();
 
+    @Autowired
     public AcpClientAgent(
             @Value("${agent.acp.qwen.enabled:false}") boolean enabled,
             @Value("${agent.acp.qwen.id:qwen-acp}") String agentId,
@@ -50,7 +52,17 @@ public class AcpClientAgent implements AcpAgent {
         this.sessionStore = sessionStore;
         this.profile = new AcpAgentProfile(
                 agentId, command, nodePath, authType, apiKey, baseUrl, model,
-                mcpUrl, mcpServerName, workDir, approvalMode, timeoutSeconds, useMcpConfigFile);
+                mcpUrl, mcpServerName, workDir, approvalMode, timeoutSeconds, useMcpConfigFile,
+                List.of("--acp"));
+    }
+
+    /**
+     * 外部 ACP Agent 使用：profile 由注册接口构造，不经过 Spring 配置。
+     */
+    public AcpClientAgent(AcpAgentProfile profile, AgentSessionStore sessionStore) {
+        this.profile = profile;
+        this.sessionStore = sessionStore;
+        this.enabled = true;
     }
 
     @Override
@@ -60,7 +72,7 @@ public class AcpClientAgent implements AcpAgent {
 
     @Override
     public String description() {
-        return "Qwen Code ACP（stdio JSON-RPC，通用 AcpClientAgent）";
+        return "ACP Agent（stdio JSON-RPC，通用 AcpClientAgent）";
     }
 
     @Override

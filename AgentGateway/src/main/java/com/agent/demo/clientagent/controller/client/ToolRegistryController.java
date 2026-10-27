@@ -1,4 +1,4 @@
-package com.agent.demo.clientagent.controller;
+package com.agent.demo.clientagent.controller.client;
 
 import com.agent.demo.clientagent.client_registry.ClientRegistration;
 import com.agent.demo.clientagent.client_registry.ClientRegistry;
@@ -25,7 +25,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/clients")
-public class ClientToolController {
+public class ToolRegistryController {
 
     /**
      * CAP register_tools 请求信封。
@@ -113,7 +113,7 @@ public class ClientToolController {
     /** 客户端与工具目录的存储/路由入口。 */
     private final ClientRegistry clientRegistry;
 
-    public ClientToolController(ClientRegistry clientRegistry) {
+    public ToolRegistryController(ClientRegistry clientRegistry) {
         this.clientRegistry = clientRegistry;
     }
 

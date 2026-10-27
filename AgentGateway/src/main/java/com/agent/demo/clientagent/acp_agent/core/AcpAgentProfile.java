@@ -1,5 +1,7 @@
 package com.agent.demo.clientagent.acp_agent.core;
 
+import java.util.List;
+
 /**
  * 一个 ACP Agent 的启动配置。
  *
@@ -19,6 +21,7 @@ package com.agent.demo.clientagent.acp_agent.core;
  * @param approvalMode 可选，Qwen 的 --approval-mode
  * @param timeoutSeconds 单轮 prompt 超时
  * @param useMcpConfigFile 是否用 --mcp-config 文件注入 MCP（Qwen ACP 的兼容开关）
+ * @param args         启动参数；Qwen 传 ["--acp"]，外部 ACP Server 按自身 CLI 传参
  */
 public record AcpAgentProfile(
         String agentId,
@@ -33,5 +36,6 @@ public record AcpAgentProfile(
         String workDir,
         String approvalMode,
         long timeoutSeconds,
-        boolean useMcpConfigFile) {
+        boolean useMcpConfigFile,
+        List<String> args) {
 }

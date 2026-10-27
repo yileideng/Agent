@@ -1,4 +1,4 @@
-package com.agent.demo.clientagent.controller;
+package com.agent.demo.clientagent.controller.client;
 
 import com.agent.demo.clientagent.acp_agent.AcpAgentRegistry;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -13,12 +13,12 @@ import java.util.Map;
  * 后续多租户可按 clientId 裁剪可见Agent（allowedAgents）。
  */
 @RestController
-public class AgentController {
+public class AgentCatalogController {
 
     /** Agent 注册表。 */
     private final AcpAgentRegistry registry;
 
-    public AgentController(AcpAgentRegistry registry) {
+    public AgentCatalogController(AcpAgentRegistry registry) {
         this.registry = registry;
     }
 
