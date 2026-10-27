@@ -235,7 +235,9 @@ public class CliAgentAdaptor implements AcpAgent {
         }
         cmd.add(command);
         cmd.add("-p");
-        cmd.add(request.userPrompt());
+        // 同理：用户输入也可能是多行（客户端输入框支持 Shift+回车换行），
+        // 经 cmd 传参必须压成单行，否则只有第一行会到达 CLI。
+        cmd.add(toSingleLine(request.userPrompt()));
         cmd.add("--output-format");
         cmd.add("stream-json");
         // 请求 token/片段级增量；不支持该参数的 CLI 可在配置里关闭
@@ -390,10 +392,24 @@ public class CliAgentAdaptor implements AcpAgent {
      * 合并客户端定制提示词与语言约束；两者都为空时不追加，避免传空参数。
      * 注意：Windows 下经 cmd 传参时参数内不能含换行，否则命令会被截断，这里用分号单行拼接。
      */
+    /**
+     * 把多行文本压成单行。
+     *
+     * <p>Windows 下经 {@code cmd /c} 传参时，参数内不能含换行——否则命令在这里被截断，
+     * CLI 只会收到第一行。用户输入和客户端提示词都可能带换行，统一走这里处理。
+     */
+    private static String toSingleLine(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.trim().replaceAll("\\s*\\r?\\n\\s*", " ");
+    }
+
     private String buildAppendedPrompt(String clientPrompt) {
         StringBuilder prompt = new StringBuilder();
         if (clientPrompt != null && !clientPrompt.isBlank()) {
-            prompt.append(clientPrompt.trim());
+            // 客户端提示词往往分多段写，这里压成一行：换行 -> 分号（保留分段感）
+            prompt.append(clientPrompt.trim().replaceAll("\\s*\\r?\\n\\s*", "；"));
         }
         if (languagePrompt != null && !languagePrompt.isBlank()) {
             if (prompt.length() > 0) {

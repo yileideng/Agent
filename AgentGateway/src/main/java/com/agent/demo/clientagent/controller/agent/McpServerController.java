@@ -150,9 +150,8 @@ public class McpServerController {
                                                 Map<String, Object> params) {
         String name = stringParam(params, "name");
         Map<String, Object> arguments = mapParam(params, "arguments");
-        System.out.println("[Mcp] 客户端 " + clientId + " 调用工具 " + name
-                + "，endUserId=" + endUserId + "，sessionId=" + sessionId
-                + "，chatId=" + chatId);
+        // 只打一行，聚焦"调了哪个工具"。会话/用户那些长 id 排查时才需要，平时太吵
+        System.out.println("[MCP] " + clientId + " -> " + name);
 
         Map<String, Object> result = new LinkedHashMap<>();
         List<Map<String, Object>> content = new ArrayList<>();

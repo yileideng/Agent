@@ -2,6 +2,8 @@ package com.agent.demo.clientagent.controller.client;
 
 import com.agent.demo.clientagent.acp_agent.AcpAgent;
 import com.agent.demo.clientagent.acp_agent.AgentRouter;
+import com.agent.demo.clientagent.client_registry.ClientRegistration;
+import com.agent.demo.clientagent.client_registry.ClientRegistry;
 import com.agent.demo.clientagent.core.AgentRequest;
 import com.agent.demo.clientagent.core.AgentResponse;
 import com.agent.demo.clientagent.core.AgentStreamSink;
@@ -153,6 +155,8 @@ public class ChatController {
     private final AgentRouter agentRouter;
     /** 请求未带 clientId 时使用的默认客户端。 */
     private final String defaultClientId;
+    /** 客户端注册信息：用来回退到注册时声明的系统提示词。 */
+    private final ClientRegistry clientRegistry;
 
     /**
      * 流式任务线程池。
@@ -167,8 +171,10 @@ public class ChatController {
     });
 
     public ChatController(AgentRouter agentRouter,
+                          ClientRegistry clientRegistry,
                           @Value("${agent.default-client-id:agent-client}") String defaultClientId) {
         this.agentRouter = agentRouter;
+        this.clientRegistry = clientRegistry;
         this.defaultClientId = defaultClientId;
     }
 
@@ -218,6 +224,15 @@ public class ChatController {
         String sessionId = text(payload.sessionId(), null);
         String agent = text(payload.agent(), null);
         String clientPrompt = text(payload.clientPrompt(), null);
+        // 本轮没覆盖时回退到注册时声明的系统提示词。
+        // 否则客户端在 /clients/register 里精心写的业务提示词会变成死字段——
+        // 客户端只在注册时传一次，chat 时不重复传。
+        if (clientPrompt == null) {
+            clientPrompt = clientRegistry.getClient(clientId)
+                    .map(ClientRegistration::clientPrompt)
+                    .filter(prompt -> prompt != null && !prompt.isBlank())
+                    .orElse(null);
+        }
         String chatId = UUID.randomUUID().toString();
         String responseId = id == null || id.isBlank() ? chatId : id;
 
@@ -262,6 +277,10 @@ public class ChatController {
                 if (text == null || text.isEmpty()) {
                     return;
                 }
+                // 直接把增量打到控制台，用来肉眼确认是不是真的在流式输出。
+                // print 不换行 + flush，才能看到逐字出现而不是攒到最后
+                System.out.print(text);
+                System.out.flush();
                 send(emitter, "delta", new DeltaEnvelope("0.1", responseId, "delta",
                         new DeltaPayload(chatId, seq.incrementAndGet(), text)));
             }
@@ -271,12 +290,15 @@ public class ChatController {
                 if (text == null || text.isEmpty()) {
                     return;
                 }
+                System.out.print("【思考】" + text);
+                System.out.flush();
                 send(emitter, "thinking", new ThinkingEnvelope("0.1", responseId, "thinking",
                         new ThinkingPayload(chatId, seq.incrementAndGet(), text)));
             }
 
             @Override
             public void finish(String sessionId, String output) {
+                System.out.println();   // 收尾换行，避免和下一条日志粘在一起
                 send(emitter, "final", new FinalEnvelope("0.1", responseId, "final",
                         new FinalPayload(sessionId, chatId, adaptor.name(), output)));
                 emitter.complete();
@@ -284,6 +306,7 @@ public class ChatController {
 
             @Override
             public void error(String code, String message) {
+                System.out.println();
                 send(emitter, "error", new ErrorEnvelope("0.1", responseId, "error",
                         new ErrorPayload(code, message == null ? "" : message)));
                 emitter.complete();
