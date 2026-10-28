@@ -42,7 +42,7 @@ import java.util.concurrent.TimeUnit;
  * todo: CLI的内置工具(读写文件/shell)仍在宿主执行，生产环境需容器沙箱隔离。
  */
 @Component
-public class CliAgentAdaptor implements AcpAgent {
+public class QwenCodeAgentAdaptor implements AcpAgent {
 
     /** CLI 命令（如 qwen / claude）。 */
     private final String command;
@@ -73,19 +73,19 @@ public class CliAgentAdaptor implements AcpAgent {
     /** 构造 mcp-config 和解析 stream-json。 */
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public CliAgentAdaptor(@Value("${agent.cli.command:qwen}") String command,
-                           @Value("${agent.cli.node-path:}") String nodePath,
-                           @Value("${agent.cli.auth-type:}") String authType,
-                           @Value("${agent.cli.api-key:}") String apiKey,
-                           @Value("${agent.cli.base-url:}") String baseUrl,
-                           @Value("${agent.cli.model:}") String model,
-                           @Value("${agent.cli.mcp-url:}") String mcpUrl,
-                           @Value("${agent.cli.mcp-server-name:client-tools}") String mcpServerName,
-                           @Value("${agent.cli.timeout-seconds:180}") long timeoutSeconds,
-                           @Value("${agent.cli.work-dir:}") String workDir,
-                           @Value("${agent.cli.language-prompt:请始终使用简体中文回答用户。}") String languagePrompt,
-                           @Value("${agent.cli.include-partial-messages:true}") boolean includePartialMessages,
-                           AgentSessionStore sessionStore) {
+    public QwenCodeAgentAdaptor(@Value("${agent.cli.command:qwen}") String command,
+                                @Value("${agent.cli.node-path:}") String nodePath,
+                                @Value("${agent.cli.auth-type:}") String authType,
+                                @Value("${agent.cli.api-key:}") String apiKey,
+                                @Value("${agent.cli.base-url:}") String baseUrl,
+                                @Value("${agent.cli.model:}") String model,
+                                @Value("${agent.cli.mcp-url:}") String mcpUrl,
+                                @Value("${agent.cli.mcp-server-name:client-tools}") String mcpServerName,
+                                @Value("${agent.cli.timeout-seconds:180}") long timeoutSeconds,
+                                @Value("${agent.cli.work-dir:}") String workDir,
+                                @Value("${agent.cli.language-prompt:请始终使用简体中文回答用户。}") String languagePrompt,
+                                @Value("${agent.cli.include-partial-messages:true}") boolean includePartialMessages,
+                                AgentSessionStore sessionStore) {
         this.command = command;
         this.nodePath = nodePath;
         this.authType = authType;
@@ -176,7 +176,7 @@ public class CliAgentAdaptor implements AcpAgent {
             processBuilder.directory(sessionDir.toFile());
 
             System.out.println("[Adaptor][cli][client=" + clientId + ",session=" + localSessionId
-                    + ",cwd=" + sessionDir + "] 启动CLI进程: " + String.join(" ", cmd));
+                    + ",cwd=" + sessionDir + "] 启动CLI进程: " + command);
             Process process = processBuilder.start();
             Thread reader = new Thread(
                     () -> readStream(process, state, answer, errBuf, sink), "cli-reader-" + safeName(localSessionId));

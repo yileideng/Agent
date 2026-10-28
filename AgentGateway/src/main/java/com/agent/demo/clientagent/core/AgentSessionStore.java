@@ -97,6 +97,34 @@ public class AgentSessionStore {
     }
 
     /**
+     * 读取该 Agent 现有的原生会话 ID，不创建状态。
+     *
+     * <p>返回 {@code null} 表示进程内还没有可复用的原生会话（首次请求、重启后或已失效），
+     * 调用方应改用共享会话历史重建上下文。
+     */
+    public String nativeSessionId(String adaptor, String clientId, String endUserId, String sessionId) {
+        SessionState state = sessions.get(key(adaptor, clientId, endUserId, sessionId));
+        if (state == null) {
+            return null;
+        }
+        state.touch();
+        return state.externalSessionId();
+    }
+
+    /**
+     * 让该 Agent 的原生会话引用失效，但不删除共享会话历史。
+     *
+     * <p>本轮失败后调用：原生会话可能已经处于不一致状态（例如 turn 中途退出），
+     * 下一轮必须按共享历史重建，而不是继续追加到不可信的线程。
+     */
+    public void clearNativeSession(String adaptor, String clientId, String endUserId, String sessionId) {
+        SessionState state = sessions.get(key(adaptor, clientId, endUserId, sessionId));
+        if (state != null) {
+            state.bindExternalSessionId(null);
+        }
+    }
+
+    /**
      * 定期清理过期会话；TTL 与清理间隔均可配置
      */
     @Scheduled(fixedDelayString = "${agent.session.cleanup-interval-ms:600000}")

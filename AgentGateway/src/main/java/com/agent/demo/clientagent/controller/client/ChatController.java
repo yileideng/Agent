@@ -90,6 +90,28 @@ public class ChatController {
     }
 
     /**
+     * 流式响应：session 信封。
+     *
+     * <p>在模型开始输出之前发送，保证首轮即使中途失败，客户端也记住了会话身份，
+     * 后续可以继续同一条共享会话。
+     *
+     * @param v       协议版本
+     * @param id      对应请求 ID
+     * @param type    固定 "session"
+     * @param payload 会话元数据
+     */
+    public record SessionEnvelope(String v, String id, String type, SessionPayload payload) {
+    }
+
+    /**
+     * session 的业务字段。
+     *
+     * @param sessionId 规范化后的公共会话 ID（客户端下一轮原样回传）
+     */
+    public record SessionPayload(String sessionId) {
+    }
+
+    /**
      * 流式响应：delta 信封。
      *
      * @param v       协议版本
@@ -221,7 +243,10 @@ public class ChatController {
 
         String clientId = text(payload.clientId(), defaultClientId);
         String endUserId = text(payload.endUserId(), "default");
-        String sessionId = text(payload.sessionId(), null);
+        // 公共会话 ID 在进入 Agent 之前规范化：切换 Agent 不换会话，
+        // 客户端回传的值与网关生成的值得到同一个 ID。
+        String sessionId = agentRouter.canonicalSessionId(
+                clientId, endUserId, text(payload.sessionId(), null));
         String agent = text(payload.agent(), null);
         String clientPrompt = text(payload.clientPrompt(), null);
         // 本轮没覆盖时回退到注册时声明的系统提示词。
@@ -270,6 +295,10 @@ public class ChatController {
         emitter.onTimeout(emitter::complete);
         emitter.onError(throwable -> emitter.complete());
         AtomicLong seq = new AtomicLong();
+
+        // 先告诉客户端会话身份，再开始模型调用：首轮失败也不会丢掉续聊凭证。
+        send(emitter, "session", new SessionEnvelope("0.1", responseId, "session",
+                new SessionPayload(request.sessionId())));
 
         AgentStreamSink sink = new AgentStreamSink() {
             @Override

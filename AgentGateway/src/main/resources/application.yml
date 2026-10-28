@@ -45,6 +45,17 @@ agent:
     # CLI每会话工作目录根路径，留空则使用系统临时目录下的 client-agent-workspaces
     work-dir: ''
 
+  # Codex app-server 独立适配器；不影响现有 cli(Qwen Code)
+  codex:
+    # 本机 exe 绝对路径或 PATH 中的 codex；未安装时目录中标记不可用
+    command: ${AGENT_CODEX_COMMAND:codex}
+    model: ${AGENT_CODEX_MODEL:}
+    model-provider: ${AGENT_CODEX_MODEL_PROVIDER:}
+    mcp-url: ${AGENT_CODEX_MCP_URL:http://127.0.0.1:8080/mcp}
+    timeout-seconds: ${AGENT_CODEX_TIMEOUT_SECONDS:180}
+    work-dir: ${AGENT_CODEX_WORK_DIR:}
+    language-prompt: 请始终使用简体中文回答用户，不要输出英文。
+
   # ACP Agent 接入（当前用 Qwen Code --acp 验证）
   acp:
     qwen:

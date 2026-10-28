@@ -1,5 +1,7 @@
 HELP.md
 target/
+# 共享会话历史属于本机运行数据，不入库
+data/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/

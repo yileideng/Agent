@@ -1,6 +1,8 @@
 package com.agent.demo.clientagent.client_registry;
 
 import com.agent.demo.clientagent.core.ToolCallContext;
+import com.agent.demo.clientagent.core.conversation.ConversationKey;
+import com.agent.demo.clientagent.core.conversation.ConversationStore;
 import com.agent.demo.clientagent.ws.WsSessionManager;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -40,6 +42,8 @@ public class ClientRegistry {
 
     /** 客户端注册后的状态；当前没有离线检测，注册即 ONLINE。 */
     private static final String STATUS_ONLINE = "ONLINE";
+    /** 工具事件在共享会话中的来源标签。 */
+    private static final String TOOL_AGENT_LABEL = "client-tools";
 
     /** clientId -> 客户端注册信息 */
     private final ConcurrentMap<String, ClientRegistration> clients = new ConcurrentHashMap<>();
@@ -50,12 +54,16 @@ public class ClientRegistry {
     private final ObjectMapper objectMapper = new ObjectMapper();
     /** MOBILE 客户端的 WS 推送/等待结果。 */
     private final WsSessionManager wsSessionManager;
+    /** 共享会话历史：记录真实工具执行，供切换 Agent 时交接。 */
+    private final ConversationStore conversations;
     /** 等待客户端工具结果的默认超时（毫秒）。 */
     private final long toolTimeoutMs;
 
     public ClientRegistry(WsSessionManager wsSessionManager,
+                          ConversationStore conversations,
                           @Value("${agent.tool.timeout-ms:60000}") long toolTimeoutMs) {
         this.wsSessionManager = wsSessionManager;
+        this.conversations = conversations;
         this.toolTimeoutMs = Math.max(1000, toolTimeoutMs);
     }
 
@@ -207,10 +215,52 @@ public class ClientRegistry {
         ClientRegistration client = getClient(cid)
                 .orElseThrow(() -> new IllegalArgumentException("客户端未注册: " + cid));
 
-        return switch (client.clientType()) {
-            case SERVER -> executeViaHttp(context, client, toolName, arguments);
-            case MOBILE -> executeViaWebSocket(context, toolName, arguments);
-        };
+        ConversationKey key = conversationKey(context);
+        String callId = context.callId();
+        if (key != null) {
+            // 只记录真实发生的调用；模型"打算调用"不等于已经执行。
+            conversations.appendToolCall(key, context.chatId(), agentLabel(key), toolName, callId, arguments);
+        }
+        try {
+            String result = switch (client.clientType()) {
+                case SERVER -> executeViaHttp(context, client, toolName, arguments);
+                case MOBILE -> executeViaWebSocket(context, toolName, arguments);
+            };
+            if (key != null) {
+                conversations.appendToolResult(key, context.chatId(), agentLabel(key), toolName, callId, true, result);
+            }
+            return result;
+        } catch (RuntimeException e) {
+            if (key != null) {
+                conversations.appendToolResult(key, context.chatId(), agentLabel(key), toolName, callId,
+                        false, e.getMessage());
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * 工具事件归属的共享会话；没有会话 ID 的历史调用不落库。
+     */
+    private ConversationKey conversationKey(ToolCallContext context) {
+        String sessionId = context.sessionId();
+        if (sessionId == null || sessionId.isBlank()) {
+            return null;
+        }
+        return new ConversationKey(
+                context.clientId() == null || context.clientId().isBlank() ? "default" : context.clientId(),
+                context.endUserId() == null || context.endUserId().isBlank() ? "default" : context.endUserId(),
+                sessionId);
+    }
+
+    /**
+     * 工具事件的操作方名称。
+     *
+     * <p>工具回调线程拿不到"哪个 Agent 发起的"这一信息（MCP 请求里没有该字段），
+     * 因此统一标注为 {@code client-tools}，避免把工具结果错误归到某个模型名下。
+     */
+    private String agentLabel(ConversationKey key) {
+        return TOOL_AGENT_LABEL;
     }
 
     /**
