@@ -37,7 +37,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class ChatController {
 
     /**
-     * CAP 请求信封。
+     * ACP 请求信封。
      *
      * @param v       协议版本，固定 "0.1"
      * @param id      请求 ID，响应原样带回
@@ -285,7 +285,7 @@ public class ChatController {
     }
 
     /**
-     * 把适配器的流式回调转成 CAP SSE。
+     * 把适配器的流式回调转成 ACP SSE。
      */
     private SseEmitter stream(AcpAgent adaptor,
                               AgentRequest request,

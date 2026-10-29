@@ -1,6 +1,6 @@
 # wxDemo 只读工具接入 Agent：技术方案
 
-> 目标：把 `D:\Git-repository\wx-demo` 作为 CAP 客户端接入 Agent Gateway，先跑通一个只读工具闭环
+> 目标：把 `D:\Git-repository\wx-demo` 作为 ACP 客户端接入 Agent Gateway，先跑通一个只读工具闭环
 > 范围：聊天面板 + `get_circuit` 工具 + HTTP 回调，不修改画布
 > 状态：方案，按阶段实现
 

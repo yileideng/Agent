@@ -14,7 +14,7 @@ import java.util.UUID;
 /**
  * 客户端 WebSocket 接入端点：{@code /ws/agent}。
  *
- * <p>只支持 CAP v0.1 信封：
+ * <p>只支持 ACP v0.1 信封：
  * <ul>
  *   <li>客户端连接后先发 {@code hello}，服务端回 {@code hello_ack} 并绑定连接；</li>
  *   <li>服务端下发 {@code tool_call} 信封，客户端回 {@code tool_result} 信封；</li>

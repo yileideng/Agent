@@ -81,7 +81,7 @@ AcpAgentRegistry
 └── CliAgentAdaptor       （stream-json，保留对照）
 ```
 
-`/chat` 仍走 CAP；Gateway 通过 `AcpAgent` 选择 Agent，不要求客户端理解 ACP。
+`/chat` 仍走 ACP；Gateway 通过 `AcpAgent` 选择 Agent，不要求客户端理解 ACP。
 
 ## 4. 核心接口
 
@@ -215,13 +215,13 @@ public class SelfAgentAdaptor implements AcpAgent {
 ## 6. 一次完整请求
 
 ```text
-1. Client → Gateway: CAP chat
+1. Client → Gateway: ACP chat
 2. Gateway: AcpAgentRegistry.get(agent)
 3. Gateway → AcpAgent: chatStream(request, sink)
-4. AcpAgent → Agent: 协议转换（CAP/ACP/HTTP/CLI）
+4. AcpAgent → Agent: 协议转换（ACP/ACP/HTTP/CLI）
 5. Agent → AcpAgent: 厂商事件
 6. AcpAgent → Gateway: delta/thinking/final/error
-7. Gateway → Client: CAP SSE
+7. Gateway → Client: ACP SSE
 ```
 
 工具调用：
@@ -297,7 +297,7 @@ Gateway → Agent: MCP content
 
 - 用 `AcpAgent` 统一现有 Self/Coze/Cli；
 - 用 `AcpClientAgent` 接 Qwen `--acp`；
-- 保持 CAP 客户端不变；
+- 保持 ACP 客户端不变；
 - 验证通过后再决定是否开放外部注册。
 
 ## 12. 已实现：AgentRouter 与外部注册
@@ -309,7 +309,7 @@ Gateway → Agent: MCP content
 - `resolve(agentId)`：从 `AcpAgentRegistry` 取 Agent，并检查 `available()`；
 - `chat/stream`：按 agentId 路由；
 - `ChatController` 不再直接依赖 `AcpAgentRegistry`；
-- 未知/不可用 Agent 返回 CAP `AGENT_UNAVAILABLE`。
+- 未知/不可用 Agent 返回 ACP `AGENT_UNAVAILABLE`。
 
 ### 12.2 外部 ACP Agent 注册（简化版）
 

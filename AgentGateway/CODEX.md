@@ -11,10 +11,10 @@ Gateway 同时保留 `cli`（Qwen Code）并注册 `codex`（Codex app-server）
 ```powershell
 $env:AGENT_CODEX_COMMAND = 'C:\Users\18101\AppData\Local\Programs\OpenAI\Codex\bin\codex.exe'
 $env:AGENT_CODEX_MCP_URL = 'http://127.0.0.1:8080/mcp'
-# 可选：省略 model/provider 使用 CLI 当前配置
-# $env:AGENT_CODEX_MODEL = '你的模型名称'
+# 如需改用其他提供方，请同时覆盖 model 与 model-provider：
+# $env:AGENT_CODEX_MODEL = '该提供方支持的模型名称'
 # $env:AGENT_CODEX_MODEL_PROVIDER = '已在 Codex CLI 中定义的 provider 名称'
-# 本机现有 Magpie provider 可用请求级覆盖选择：
+# 本项目在本机默认选用 Magpie provider 的已验证组合：
 # $env:AGENT_CODEX_MODEL_PROVIDER = 'magpie'
 # $env:AGENT_CODEX_MODEL = 'gpt-6.1-sol'
 ```
@@ -24,14 +24,14 @@ $env:AGENT_CODEX_MCP_URL = 'http://127.0.0.1:8080/mcp'
 | 配置 | 环境变量 | 默认值 |
 | --- | --- | --- |
 | `agent.codex.command` | `AGENT_CODEX_COMMAND` | `codex` |
-| `agent.codex.model` | `AGENT_CODEX_MODEL` | CLI 默认模型 |
-| `agent.codex.model-provider` | `AGENT_CODEX_MODEL_PROVIDER` | CLI 默认 provider |
+| `agent.codex.model` | `AGENT_CODEX_MODEL` | `gpt-6.1-sol` |
+| `agent.codex.model-provider` | `AGENT_CODEX_MODEL_PROVIDER` | `magpie` |
 | `agent.codex.mcp-url` | `AGENT_CODEX_MCP_URL` | `http://127.0.0.1:8080/mcp` |
 | `agent.codex.timeout-seconds` | `AGENT_CODEX_TIMEOUT_SECONDS` | `180` |
 | `agent.codex.work-dir` | `AGENT_CODEX_WORK_DIR` | 系统临时目录的 `codex-agent-workspaces` |
 | `agent.codex.language-prompt` | Spring 标准配置覆盖 | 简体中文约束 |
 
-`agent.codex.model-provider` 对应 app-server schema 的 `modelProvider` 字段，每次 `thread/start` 和 `thread/resume` 都会重新传入；为空时保留 CLI 默认。它只选择已在该账户 Codex 配置中定义的 provider，沿用其既有 endpoint/认证，不复制或记录 provider 的认证字段，也不改变全局配置。
+`agent.codex.model-provider` 对应 app-server schema 的 `modelProvider` 字段，每次 `thread/start` 和 `thread/resume` 都会重新传入。默认 `magpie` / `gpt-6.1-sol` 与启动脚本保持一致；改用其他模型时必须同时改为该模型所属的 provider。它只选择已在该账户 Codex 配置中定义的 provider，沿用其既有 endpoint/认证，不复制或记录 provider 的认证字段，也不改变全局配置。此前 IntelliJ 直接启动未提供两个环境变量时曾回退到本机 CLI 的 `gpt-5.5` / `openai`，ChatGPT 账号对该组合返回 `model_not_found`，本项目默认值已修正。
 
 `command` 不存在时，Gateway 正常启动，`codex` 在 Agent 目录中显示不可用并提供配置提示，其他 Agent 继续工作。可执行文件存在只表示本机可启动，实际认证、模型可用性和 CLI 协议错误在本轮请求中报告。
 

@@ -49,8 +49,9 @@ agent:
   codex:
     # 本机 exe 绝对路径或 PATH 中的 codex；未安装时目录中标记不可用
     command: ${AGENT_CODEX_COMMAND:codex}
-    model: ${AGENT_CODEX_MODEL:}
-    model-provider: ${AGENT_CODEX_MODEL_PROVIDER:}
+    # IDE 直接启动也使用已验证的本机 provider/model；仍可由环境变量覆盖
+    model: ${AGENT_CODEX_MODEL:gpt-6.1-sol}
+    model-provider: ${AGENT_CODEX_MODEL_PROVIDER:magpie}
     mcp-url: ${AGENT_CODEX_MCP_URL:http://127.0.0.1:8080/mcp}
     timeout-seconds: ${AGENT_CODEX_TIMEOUT_SECONDS:180}
     work-dir: ${AGENT_CODEX_WORK_DIR:}

@@ -4,7 +4,7 @@ package com.agent.demo.clientagent.core;
  * Agent 流式输出的统一回调。
  *
  * <p>不同 Agent 的流式协议不同（CLI 的 stream-json、扣子的 SSE、自研 Brain 的 HTTP 流），
- * 适配器负责把厂商事件翻译成这些方法；网关再把它们转成统一的 CAP
+ * 适配器负责把厂商事件翻译成这些方法；网关再把它们转成统一的 ACP
  * {@code delta} / {@code thinking} / {@code final} / {@code error} 推送给客户端。
  */
 public interface AgentStreamSink {

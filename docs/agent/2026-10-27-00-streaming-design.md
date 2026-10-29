@@ -1,4 +1,4 @@
-# Agent 流式输出设计（CAP SSE）
+# Agent 流式输出设计（ACP SSE）
 
 > 状态：Phase 1 已实现（文本流式 + thinking）
 > 范围：文本流式输出 + thinking 独立通道
@@ -17,7 +17,7 @@
 本设计要解决的问题：
 
 1. **Agent 侧保持异构**：CLI 的 stream-json、Coze 的 SSE、自研 Brain 的 HTTP，各自协议不同；
-2. **客户端侧统一**：客户端只看到 CAP 的 `delta` / `thinking` / `final` / `error`；
+2. **客户端侧统一**：客户端只看到 ACP 的 `delta` / `thinking` / `final` / `error`；
 3. **逐事件转发**：Adaptor 不能把整段回答收完再发；
 4. **thinking 独立通道**：思考过程不混入 assistant 回答，客户端自行决定展示或隐藏；
 5. **不破坏现有非流式调用**：`Accept: application/json` 仍返回 `final`；
@@ -43,7 +43,7 @@
                                                        ▼
                                               ┌──────────────────┐
                                               │ ChatController   │
-                                              │ CAP SSE 编码      │
+                                              │ ACP SSE 编码      │
                                               └────────┬─────────┘
                                                        │ text/event-stream
                                                        ▼
@@ -74,7 +74,7 @@ Accept: text/event-stream
 Content-Type: application/json
 ```
 
-请求体不变，仍是 CAP `chat` 信封：
+请求体不变，仍是 ACP `chat` 信封：
 
 ```json
 {
@@ -120,7 +120,7 @@ X-Accel-Buffering: no
 
 ```text
 event: <delta|thinking|final|error>
-data: <CAP 信封 JSON>
+data: <ACP 信封 JSON>
 ```
 
 `delta`：
@@ -439,7 +439,7 @@ ChatStreamResult chatStream(String prompt, String agent, String sessionId,
 
 ### 9.1 单元测试
 
-- `AgentStreamSink` 到 CAP 事件的映射；
+- `AgentStreamSink` 到 ACP 事件的映射；
 - SSE 事件编码（`delta` / `thinking` / `final` / `error`）；
 - `delta` / `thinking` 共用 `seq`，单调递增；
 - `thinking` 不进入 `final.output`；

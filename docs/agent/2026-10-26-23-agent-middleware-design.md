@@ -3,7 +3,7 @@
 > 目标读者：本项目开发者 / 架构评审
 > 范围：把当前 demo 演进为可支撑多客户端接入的 Agent 中间件
 >
-> **文档定位**：本文是实现层设计与现状评估。产品定位、产品形态、CAP/AAP 协议与传输模型的最新方案见 [2026-10-27-00-agent-gateway-design.md](./2026-10-27-00-agent-gateway-design.md)，两者配合阅读。
+> **文档定位**：本文是实现层设计与现状评估。产品定位、产品形态、ACP/AAP 协议与传输模型的最新方案见 [2026-10-27-00-agent-gateway-design.md](./2026-10-27-00-agent-gateway-design.md)，两者配合阅读。
 
 ---
 
@@ -39,7 +39,7 @@
 
 补充说明：
 
-- **ACP 与 CAP 的关系**：ACP（Agent Client Protocol）是“客户端宿主 Agent”的协议，当前 spec 主要面向编辑器，但客户端不限于编辑器；本项目把它泛化到各种客户端，用 CAP 承载客户端侧契约。当前 CAP 是 ACP 思路的泛化实现，不是 ACP 线协议兼容：CAP 是 HTTP/WS + `v/id/type/payload`，ACP 是 JSON-RPC 的 `initialize/session/prompt/update/request_permission`。若要对齐 ACP 生态，需要单独加 ACP 适配入口，而不是把 CAP 直接改名为 ACP。
+- **本项目 ACP 与 ACP v1 的关系**：ACP v1（Zed 的 Agent Client Protocol）是“客户端宿主 Agent”的协议，当前 spec 主要面向编辑器，但客户端不限于编辑器；本项目把它泛化到各种客户端，用**本项目的 ACP** 承载客户端侧契约。本项目的 ACP 是 ACP v1 思路的泛化实现，**不是线协议兼容**：ACP 是 HTTP/WS + `v/id/type/payload`，ACP v1 是 JSON-RPC 的 `initialize/session/prompt/update/request_permission`。若要对齐 ACP v1 生态，需要单独加 ACP v1 适配入口，而不是把本项目的 ACP 直接改名。
 - **为什么不让 Agent 直连客户端**：需要中间件做鉴权、工具裁剪、审计、限流、多租户路由，否则每个客户端都要自己对接每种 Agent。
 
 ---
@@ -358,11 +358,11 @@ qwen -p <prompt> --output-format stream-json \
 | 接口 | 归属 | 说明 |
 |---|---|---|
 | `GET /agents` | 中间件 | Agent 能力发现：返回默认 Agent 及每个 Agent 的描述、能力标签、是否可用 |
-| `POST /chat` | 中间件 | CAP v0.1 对话入口：请求体 `{v,id,type:"chat",payload:{clientId,endUserId,sessionId?,prompt,agent?,clientPrompt?}}`；`Accept: application/json` 返回 `final`，`Accept: text/event-stream` 返回 `delta/thinking/final/error` SSE |
+| `POST /chat` | 中间件 | ACP v0.1 对话入口：请求体 `{v,id,type:"chat",payload:{clientId,endUserId,sessionId?,prompt,agent?,clientPrompt?}}`；`Accept: application/json` 返回 `final`，`Accept: text/event-stream` 返回 `delta/thinking/final/error` SSE |
 | `POST /v1/brain/chat` | BrainAgent | 自研 Agent 决策接口：入参 `clientId/endUserId/sessionId/newSession/userPrompt/clientPrompt`，返回 `CLIENT_TOOL_CALL`（含工具名与参数）或 `FINAL_OUTPUT` |
 | `GET /chat?prompt=&agent=&sessionId=` | Client | 自研客户端的用户入口，内部以 `POST /chat` 信封转发中间件，返回 `final` 信封 |
-| `POST /client/tools/execute` | Client | 工具回调端点；请求和响应都是 CAP 信封 |
-| `POST /clients/register` | 中间件 | CAP v0.1 注册入口：`register_tools` 信封，包含 `clientType/baseCallbackUrl/tools` 等；非法返回 400 + `error` 信封 |
+| `POST /client/tools/execute` | Client | 工具回调端点；请求和响应都是 ACP 信封 |
+| `POST /clients/register` | 中间件 | ACP v0.1 注册入口：`register_tools` 信封，包含 `clientType/baseCallbackUrl/tools` 等；非法返回 400 + `error` 信封 |
 | `GET /clients` | 中间件 | 查询已注册客户端列表 |
 | `GET /clients/{clientId}/tools` | 中间件 | 查询某个客户端的全部工具 |
 | `GET /clients/{clientId}/tools/{name}` | 中间件 | 查询单个工具定义 |
@@ -438,7 +438,7 @@ qwen -p <prompt> --output-format stream-json \
 | 会话管理 | `AgentSessionStore` 统一持有，按 `(adaptor,clientId,sessionId)` 隔离，TTL 清理；`/chat` 支持 sessionId 多轮 | **60%** | 无持久化、无历史回放、换 Agent 时历史未回放 |
 | 数据隔离 | 无 | **0%** | 无 DB、无租户主键、无存储前缀 |
 | 运行时隔离 | 每会话独立工作目录、MCP 按客户端裁剪 | **30%** | CLI 仍以宿主进程运行，可读写宿主目录，无沙箱 |
-| 流式输出 | 支持 CAP SSE（`delta/thinking/final/error`）；CLI 逐事件，Self 仅 `final` | **65%** | 取消、背压、异步执行器未做 |
+| 流式输出 | 支持 ACP SSE（`delta/thinking/final/error`）；CLI 逐事件，Self 仅 `final` | **65%** | 取消、背压、异步执行器未做 |
 | 异步长任务 | 工具调用同步 HTTP | **0%** | 无 pending/taskId 机制 |
 | 可观测性 | `System.out` 日志已带 clientId/sessionId | **20%** | 无 trace、无指标、无审计落库 |
 | 安全 | 注册/`/mcp` 均无鉴权；key 明文写 yml | **15%** | SSRF、越权、密钥管理全部缺失 |

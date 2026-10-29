@@ -3,10 +3,12 @@
 > 来源：[DeepSeek 分享会话](https://chat.deepseek.com/share/axeeqqywn21wwpif7h)
 > 原文：[2026-10-27-13-deepseek-share-transcript.md](./2026-10-27-13-deepseek-share-transcript.md)（52 条消息，保留用户消息、助手回复和思考；工具搜索结果未展开）
 > 说明：会话由 AI 生成，引用的数据和结论需要二次验证；本文区分“会话观点”和“对本项目的建议”。
+> **术语说明（2026-10 命名统一后补记）**：本文中的 "CAP" 指**本项目当时的客户端协议**，
+> 现已统一命名为 **ACP**；本文中单独出现的 "ACP" 指 **Zed 的 ACP v1 规范**。
 
 ## 0. ACP 与 CAP：概念同源，实现不同
 
-会话里的 **ACP = Agent Client Protocol**，由 Zed 主导，解决“客户端如何启动、连接、控制一个编码 Agent”。
+会话里的 **ACP = Agent Client Protocol**（即本文所称 ACP v1），由 Zed 主导，解决“客户端如何启动、连接、控制一个编码 Agent”。
 
 它和本项目的关系，可以分成两层看：
 

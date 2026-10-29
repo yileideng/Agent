@@ -4,7 +4,7 @@
 > 关联文档：[2026-10-26-23-agent-middleware-design.md](./2026-10-26-23-agent-middleware-design.md)
 >
 > **历史说明**：本文记录的是早期 `ToolRegistry` / `parameters` / 每工具 `callbackUrl` 的方案。
-> 当前实现已改为 `ClientRegistry` + `inputSchema` + 统一 CAP 信封，接入请看 [2026-10-27-00-客户端接入指南.md](../user/2026-10-27-00-客户端接入指南.md)。
+> 当前实现已改为 `ClientRegistry` + `inputSchema` + 统一 ACP 信封，接入请看 [2026-10-27-00-客户端接入指南.md](../user/2026-10-27-00-客户端接入指南.md)。
 
 ---
 

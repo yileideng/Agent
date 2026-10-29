@@ -18,7 +18,7 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * <p>负责把"选哪个 Agent"和"这个会话之前发生了什么"分开：
  * <ul>
- *   <li>公共 CAP 会话 ID 只有一个，切换 Agent 不换会话；</li>
+ *   <li>公共 ACP 会话 ID 只有一个，切换 Agent 不换会话；</li>
  *   <li>每个 Agent 仍持有自己的原生会话（CLI session / Codex thread），只做续接加速；</li>
  *   <li>共享历史持久化在 {@link ConversationStore}，成功后才推进该 Agent 的同步游标；</li>
  *   <li>本轮失败会失效该 Agent 的原生引用，下一轮按共享历史重建。</li>

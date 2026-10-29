@@ -4,7 +4,7 @@ package com.agent.demo.clientagent.core.conversation;
  * 共享会话的隔离键。
  *
  * <p>同一个 {@code sessionId} 在不同客户端、不同终端用户下必须是不同会话，
- * 因此三者共同构成键。{@code sessionId} 使用规范化后的公共 CAP 会话 ID。
+ * 因此三者共同构成键。{@code sessionId} 使用规范化后的公共 ACP 会话 ID。
  *
  * @param clientId  客户端（租户）标识
  * @param endUserId 终端用户标识

@@ -6,17 +6,29 @@
 
 ## 一、总体模型
 
+### 1.0 术语约定（重要）
+
+本项目里会同时出现两个"A"开头的协议名，先约定清楚，后文不再重复解释：
+
+| 写法 | 指什么 |
+| --- | --- |
+| **ACP** | **本项目定义的 Agent-Client Protocol**：客户端与网关之间统一的交互协议。信封为 `v/id/type/payload`，承载 `register_tools` / `chat` / `tool_call` / `tool_result` / `delta` / `thinking` / `final` / `error`，传输可走 HTTP、WebSocket、SSE。 |
+| **ACP v1** | **Zed Industries 的 Agent Client Protocol 规范**（JSON-RPC 2.0，方法为 `initialize` / `session/new` / `session/prompt` / `session/update`）。它是行业标准，本项目目前**不是**它的线协议兼容实现。 |
+
+> 两者的关系：思路同源（都是"客户端宿主 Agent"），但报文、传输、生命周期、权限语义都不同。
+> 说"本项目支持 ACP"时，指的是前者；要对齐 Zed 规范时，必须显式写 **ACP v1**。
+
 ### 1.1 三个协议，三个“插座”
 
 | 协议 | 连接双方 | 解决的问题 |
 |---|---|---|
-| **CAP** | Client ↔ Gateway | 客户端怎么统一接入 |
+| **ACP**（本项目） | Client ↔ Gateway | 客户端怎么统一接入 |
 | **MCP** | Agent ↔ Tool | 工具从哪里来 |
-| **ACP** | Gateway/Client ↔ Agent | Agent 怎么统一接入 |
+| **ACP v1**（Zed 标准） | Gateway/Client ↔ Agent | Agent 怎么统一接入 |
 
 ### 1.2 Gateway 只做四件事
 
-1. **客户端入口**：CAP 解析、SSE、工具回调；
+1. **客户端入口**：ACP 解析、SSE、工具回调；
 2. **Agent 注册与路由**：Registry 管“有哪些”，Router 管“选哪个”；
 3. **MCP Server**：把客户端工具暴露给 Agent；
 4. **ACP Client**：连接内置 Agent 或外部 ACP Server。
@@ -29,22 +41,22 @@
 
 ### 1.3 不变量
 
-- 客户端只面对 CAP，不感知 Agent 厂商；
+- 客户端只面对 ACP，不感知 Agent 厂商；
 - Agent 侧保持异构，Gateway 负责协议翻译；
 - 工具执行留在客户端，Gateway 只做路由和转换。
 
-## 二、客户端工具：CAP ↔ MCP 翻译
+## 二、客户端工具：ACP ↔ MCP 翻译
 
 ### 2.1 机制
 
 - 客户端只做一件事：把自己的工具（`name/description/inputSchema`）注册给网关；
 - 网关对外暴露 MCP Server，Agent 看到的是标准 MCP 工具；
-- Agent 调 `tools/call`，网关再翻译成 CAP `tool_call`，通过 HTTP 回调/WS 让客户端执行；
+- Agent 调 `tools/call`，网关再翻译成 ACP `tool_call`，通过 HTTP 回调/WS 让客户端执行；
 - 客户端不需要实现 MCP，Agent 不需要知道客户端的存在。
 
 ### 2.2 核心不变量
 
-**MCP 是 Agent 侧的通用插座，CAP 是客户端侧的通用插座，Adaptor/网关做中间翻译。**
+**MCP 是 Agent 侧的通用插座，ACP 是客户端侧的通用插座，Adaptor/网关做中间翻译。**
 
 ## 三、流式输出：异构事件 → 统一事件
 
@@ -52,7 +64,7 @@
 
 - CLI 是 `stream-json`，Coze 是厂商 SSE，Self Brain 是 HTTP；
 - Adaptor 把它们统一成 `delta / thinking / finish / error`；
-- 网关再统一成 CAP SSE 的 `delta / thinking / final / error`；
+- 网关再统一成 ACP SSE 的 `delta / thinking / final / error`；
 - 客户端只认一套协议，厂商事件永远不泄漏。
 
 ### 3.2 核心不变量

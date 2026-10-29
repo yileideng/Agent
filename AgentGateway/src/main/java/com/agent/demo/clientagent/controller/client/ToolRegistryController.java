@@ -28,7 +28,7 @@ import java.util.Map;
 public class ToolRegistryController {
 
     /**
-     * CAP register_tools 请求信封。
+     * ACP register_tools 请求信封。
      *
      * @param v       协议版本，固定 "0.1"
      * @param id      请求 ID，响应原样带回
@@ -123,7 +123,7 @@ public class ToolRegistryController {
      * <p>作用：客户端注册/覆盖自己的工具目录。同一 {@code clientId} 再次注册会全量替换，
      * 未出现在本次列表中的工具视为删除。
      *
-     * <p>入参（CAP {@code register_tools} 信封的 payload）：
+     * <p>入参（ACP {@code register_tools} 信封的 payload）：
      * <ul>
      *   <li>{@code clientId}：必填，客户端唯一标识；</li>
      *   <li>{@code clientType}：必填，{@code SERVER} 或 {@code MOBILE}；</li>

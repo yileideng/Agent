@@ -17,7 +17,7 @@
 
 ```text
 controller/
-├── ChatController          CAP 对话入口
+├── ChatController          ACP 对话入口
 ├── ClientToolController    客户端注册/工具管理
 ├── AgentController         Agent 能力发现
 └── McpServerController     MCP Server 入口
@@ -55,10 +55,10 @@ core/
 
 ## 2. 设计原则
 
-1. **按变化原因分包**：改 CAP 协议、改 MCP 协议、改某个 Agent 适配器，不应该改同一个包。
+1. **按变化原因分包**：改 ACP 协议、改 MCP 协议、改某个 Agent 适配器，不应该改同一个包。
 2. **端口与适配器分离**：`AcpAgent` 是端口，`acp/`、`cli/`、`self/`、`coze/` 是适配器。
 3. **入口薄，服务厚**：Controller 只做协议解析/响应，编排放 Service。
-4. **DTO 不跨层乱放**：CAP/MCP/WS 的线上 DTO 放各自 `api` 子包；内部模型放领域包。
+4. **DTO 不跨层乱放**：ACP/MCP/WS 的线上 DTO 放各自 `api` 子包；内部模型放领域包。
 5. **依赖方向单一**：`api -> application -> domain`，`adapter` 实现 `domain` 端口；不要反向依赖。
 6. **不为了分层而分层**：项目规模不大，不引入 `domain/entity/repository` 全套 DDD。
 
@@ -68,7 +68,7 @@ core/
 
 | 调用方 | 入口 | 说明 |
 |---|---|---|
-| 客户端 | `ChatController` | CAP 对话 |
+| 客户端 | `ChatController` | ACP 对话 |
 | 客户端 | `ClientToolController` | 客户端注册/工具目录 |
 | 客户端 | `AgentController` | 客户端发现有哪些 Agent（不是 Agent 在调） |
 | 客户端 | `ClientWebSocketHandler` | 移动端 WS 接入 |
@@ -82,7 +82,7 @@ api/
 └── agent/     面向 Agent
 ```
 
-这比 `api.cap` / `api.mcp` 更直观，因为 `cap`/`mcp` 是协议名，不是调用方；同一个调用方未来可能同时有 CAP 和 ACP 两个入口。
+这比 `api.acp` / `api.mcp` 更直观，因为 `cap`/`mcp` 是协议名，不是调用方；同一个调用方未来可能同时有 ACP（本项目）和 ACP v1（Zed 标准）两个入口。
 
 ## 3. 目标包结构
 
@@ -175,15 +175,15 @@ com.agent.demo.gateway
 
 | 包 | 职责 | 不应该做什么 |
 |---|---|---|
-| `api.client` | 面向客户端的 CAP 入口：对话、客户端注册、Agent 发现 | 不直接调 Adaptor，不写业务编排 |
+| `api.client` | 面向客户端的 ACP 入口：对话、客户端注册、Agent 发现 | 不直接调 Adaptor，不写业务编排 |
 | `api.client.ws` | 客户端 WebSocket 接入 | 不决定工具用 HTTP 还是 WS |
 | `api.agent.mcp` | 面向 Agent 的 MCP Server 入口 | 不直接查 ClientRegistry 细节 |
 | `api.admin` | 后续的 Registry/健康检查/运维入口 | 不混入客户端协议 |
-| `chat` | 一轮对话编排：选 Agent、建请求、流式转发 | 不解析 CAP 信封 |
+| `chat` | 一轮对话编排：选 Agent、建请求、流式转发 | 不解析 ACP 信封 |
 | `agent` | Agent 端口、请求/响应/事件模型、注册表 | 不关心客户端 HTTP/WS |
-| `agent.acp` | ACP 协议连接、会话、事件映射 | 不感知 CAP |
+| `agent.acp` | ACP 协议连接、会话、事件映射 | 不感知 ACP |
 | `agent.adapters.*` | 各 Agent 的协议适配 | 不互相依赖 |
-| `client` | 客户端注册、工具目录、工具调用编排 | 不解析 CAP 信封 |
+| `client` | 客户端注册、工具目录、工具调用编排 | 不解析 ACP 信封 |
 | `client.transport` | HTTP/WS 具体投递方式 | 不管理客户端目录 |
 | `mcp` | MCP 工具发现/调用服务 | 不处理 HTTP 状态码 |
 | `common` | 极少量通用工具 | 不塞业务类 |
@@ -196,7 +196,7 @@ com.agent.demo.gateway
 
 `ChatController` 目前有 328 行，混合了：
 
-- CAP 信封解析；
+- ACP 信封解析；
 - Agent 选择；
 - 会话 ID 处理；
 - SSE 生命周期；
@@ -205,13 +205,13 @@ com.agent.demo.gateway
 拆成：
 
 ```text
-api.cap.ChatController
+api.acp.ChatController
   - 解析 CapEnvelope
   - 调 ChatService.chat / ChatService.stream
   - 返回 JSON 或 SseEmitter
 
 chat.ChatService
-  - CAP 侧编排：session/chatId、同步/流式适配
+  - ACP 侧编排：session/chatId、同步/流式适配
   - 构造 AgentRequest
   - 调 AgentRouter
 
@@ -255,8 +255,8 @@ public class AgentRouter {
 | `AgentRouter` | 选 Agent、可用性校验、路由、异常映射 |
 | `AcpAgentRegistry` | 只负责“按名字找到 Agent”，不判断调用方有没有权限 |
 | `ChatAuthorizer` | 在业务执行前做客户端/租户/Agent 授权 |
-| `ChatService` | CAP 侧编排（session/chatId/同步流式），不直接查 Registry |
-| `ChatController` | 只解析 CAP 和写 HTTP/SSE |
+| `ChatService` | ACP 侧编排（session/chatId/同步流式），不直接查 Registry |
+| `ChatController` | 只解析 ACP 和写 HTTP/SSE |
 
 `AgentRouter` 不再承担主鉴权职责。它最多保留一个轻量的 `assertAllowed` 作为最后防线，不能作为唯一鉴权点。
 
@@ -280,7 +280,7 @@ HTTP 请求
 AuthenticationFilter          401，未认证直接拒绝
   │
   ▼
-CAP 解析（最小解析，不建会话、不启动进程）
+ACP 解析（最小解析，不建会话、不启动进程）
   │
   ▼
 ChatAuthorizer                403，无权限直接拒绝
@@ -298,13 +298,13 @@ AcpAgent
 这里有一个现实约束：
 
 - **认证**可以完全在协议解析之前；
-- **授权**至少要知道“请求的是哪个 Agent”，所以要做一次最小 CAP 解析；
+- **授权**至少要知道“请求的是哪个 Agent”，所以要做一次最小 ACP 解析；
 - 但这次解析必须是**无副作用**的：不创建 session、不生成 chatId、不启动 Agent、不打开 SSE。
 
 也就是说：
 
 ```text
-CAP 解析（读 agent/clientId） -> 授权 -> 后续业务
+ACP 解析（读 agent/clientId） -> 授权 -> 后续业务
 ```
 
 而不是：
@@ -315,14 +315,14 @@ ChatService 全部执行 -> AgentRouter 才检查权限
 
 `ChatAuthorizer` 可以在 Controller 里调用，也可以由所有入口共用的 `ChatFacade` 调用；关键是它必须在 `ChatService` 的会话/Agent 调用之前。
 
-另外，认证后的 `clientId` 应来自 `AuthContext`，不能直接信任 CAP payload 里的 `clientId`，否则客户端可以伪造租户。
+另外，认证后的 `clientId` 应来自 `AuthContext`，不能直接信任 ACP payload 里的 `clientId`，否则客户端可以伪造租户。
 
 ### 5.4 ClientToolController -> api.client + client
 
 `ClientToolController` 负责注册、查询、注销客户端；具体工具执行不应由它做。
 
 ```text
-api.cap.ClientToolController
+api.acp.ClientToolController
   - 解析注册/查询/注销请求
   - 调 ClientToolService
 
@@ -405,7 +405,7 @@ common            -> 无业务依赖
 
 - `agent` 依赖 `api`；
 - `client` 依赖 `controller`；
-- `agent.acp` 依赖 CAP；
+- `agent.acp` 依赖 ACP；
 - `ClientRegistry` 依赖 `ChatController`；
 - `common` 反向依赖业务包。
 
@@ -449,7 +449,7 @@ common            -> 无业务依赖
 ## 9. 不建议的做法
 
 - 不要给每个 Agent 建一个顶级包（`qwen/`、`claude/`、`coze/` 平铺），统一放 `agent.adapters`；
-- 不要把 CAP DTO 放进 `agent`，也不要把 MCP DTO 放进 `client`；
+- 不要把 ACP DTO 放进 `agent`，也不要把 MCP DTO 放进 `client`；
 - 不要让 Controller 直接 new Adaptor 或直接调 `RestClient`；
 - 不要为了“分层”把 26 个类拆成 100 个接口；
 - 不要把 `AcpAgent` 放进 `agent.acp`，它是端口，不是 ACP 专属。

@@ -3,7 +3,7 @@
 > 工作名：**Agent Gateway（Agent 网关）**
 > 版本：v0.1（2026-10）
 > 目标读者：产品 / 架构 / 客户端接入方 / Agent 接入方
-> 文档定位：产品定位、产品形态、核心链路、传输模型、CAP/AAP 协议与演进路线
+> 文档定位：产品定位、产品形态、核心链路、传输模型、ACP/AAP 协议与演进路线
 > 现状：本文包含目标设计。当前已实现范围以 [2026-10-26-23-agent-middleware-design.md](./2026-10-26-23-agent-middleware-design.md) 第 12 节为准；token 鉴权、SSE 客户端工具、riskLevel/outputSchema、chat_ack/cancel/usage 等仍属规划。
 > 关联文档：[2026-10-26-23-agent-middleware-design.md](./2026-10-26-23-agent-middleware-design.md)（实现层设计与现状评估）、[2026-10-26-21-agent-tool-discovery-and-calling.md](./2026-10-26-21-agent-tool-discovery-and-calling.md)（工具发现与调用机制）、[2026-10-26-21-client-registry-redesign.md](./2026-10-26-21-client-registry-redesign.md)（ClientRegistry 重构记录）
 
@@ -23,7 +23,7 @@
 
 1. **产品形态**：SDK/Connector 为主，控制台为辅；网页表单只是接入向导，不是产品本身。
 2. **传输模型**：HTTP callback、WebSocket、SSE 是**并列**的传输绑定，不是主备关系；NAT 后的客户端默认走 WS/SSE。
-3. **协议分层**：客户端侧协议（CAP）统一、稳定、版本化；Agent 侧协议（AAP）保持异构，由网关适配。
+3. **协议分层**：客户端侧协议（ACP）统一、稳定、版本化；Agent 侧协议（AAP）保持异构，由网关适配。
 
 ---
 
@@ -48,7 +48,7 @@ N 个客户端 × M 个 Agent = N×M 套定制
 有网关后：
 
 ```
-N 个客户端 × 1 套 CAP  +  M 个 Agent × 1 套 AAP  =  N+M
+N 个客户端 × 1 套 ACP  +  M 个 Agent × 1 套 AAP  =  N+M
 ```
 
 客户端只接一套协议，Agent 只接一套适配层；工具留在客户端执行，网关只做目录与路由。
@@ -105,7 +105,7 @@ N 个客户端 × 1 套 CAP  +  M 个 Agent × 1 套 AAP  =  N+M
 │              数据面（云端 Agent 网关）                │
 │        HTTP callback / WebSocket / SSE / 路由 / 鉴权  │
 └───────────────────────┬─────────────────────────────┘
-                        │ CAP 协议
+                        │ ACP 协议
 ┌───────────────────────▼─────────────────────────────┐
 │         接入面（客户端 SDK / Connector）              │
 │   建连 / 自动注册工具 / 执行工具 / 回调结果 / 重连     │
@@ -241,7 +241,7 @@ Client                    Gateway                     Agent
 | Agent | `self`（确定性，做协议一致性）+ `cli`（真实效果） |
 | 工具 | `get_user_profile`（读）、`search_hot_topics`（读）、`save_note_draft`（写） |
 | 传输 | WS + HTTP callback（SSE 紧随） |
-| 协议 | CAP v0.1：hello / register_tools / chat / tool_call / tool_result / final / error |
+| 协议 | ACP v0.1：hello / register_tools / chat / tool_call / tool_result / final / error |
 | 会话 | 内存存储，支持 `sessionId` 多轮 |
 | 身份 | 简单 Bearer token（不做完整 OAuth） |
 
@@ -292,10 +292,10 @@ Client                    Gateway                     Agent
 
 ### 4.3 协议与传输解耦
 
-业务代码只认 CAP 信封，不认 WS/SSE/HTTP；传输层只负责把信封搬来搬去。
+业务代码只认 ACP 信封，不认 WS/SSE/HTTP；传输层只负责把信封搬来搬去。
 
 ```
-CAP 消息（与传输无关）
+ACP 消息（与传输无关）
    ├── HTTP 绑定：POST /v1/chat，回调 POST {base}{path}
    ├── WS 绑定：wss://.../v1/ws
    └── SSE 绑定：GET /v1/events + POST /v1/messages
@@ -316,34 +316,38 @@ CAP 消息（与传输无关）
 ### 5.1 分层
 
 ```
-Client  <--- CAP（统一、稳定、版本化） --->  Gateway  <--- AAP（异构、适配器） --->  Agent
+Client  <--- ACP（统一、稳定、版本化） --->  Gateway  <--- AAP（异构、适配器） --->  Agent
 ```
 
 | 层 | 全称 | 面向 | 设计原则 |
 |---|---|---|---|
-| **CAP** | Client Access Protocol | 客户端 | 统一、稳定、版本化、有 SDK |
+| **ACP** | Agent-Client Protocol（本项目定义） | 客户端 | 统一、稳定、版本化、有 SDK |
 | **AAP** | Agent Adaptation Protocol | Agent | 异构、适配、能力协商，不强行统一 |
 | **Canonical Model** | 内部通用模型 | 网关内部 | Session / ToolDefinition / ToolCall / ToolResult / AgentEvent |
+
+> **术语界定**：本文的 ACP 指本项目定义的客户端接入协议（`v/id/type/payload` 信封）。
+> Zed Industries 的 Agent Client Protocol 规范（JSON-RPC 2.0，`initialize`/`session/prompt` 等）
+> 在本文中写作 **ACP v1**，本项目当前不是它的线协议兼容实现。
 
 ### 5.2 为什么不对称
 
 - 客户端是你自己定义的，可以要求它遵守一套稳定协议。
 - Agent 是外部的：Claude Code 是 CLI + MCP，扣子是厂商 API，自研 Brain 是 HTTP。强行统一只会**削平能力**（子 agent、hooks、skills、planning 等强项丢失）。
-- 所以：**CAP 统一，AAP 异构；网关吸收差异，对外暴露统一的 `AgentEvent`。**
+- 所以：**ACP 统一，AAP 异构；网关吸收差异，对外暴露统一的 `AgentEvent`。**
 
 ### 5.3 MCP 的位置
 
 **MCP 是 Agent 侧的工具协议，不是客户端侧协议。**
 
 - 网关对 CLI Agent 暴露 MCP Server（`tools/list` / `tools/call`）；
-- 网关对客户端说 CAP；
-- 网关负责把 CAP `tool_result` 翻译成 MCP `content`，把 MCP `tools/call` 翻译成 CAP `tool_call`。
+- 网关对客户端说 ACP；
+- 网关负责把 ACP `tool_result` 翻译成 MCP `content`，把 MCP `tools/call` 翻译成 ACP `tool_call`。
 
 不要把 MCP 一路推到客户端：客户端在 NAT 后、不是 Agent，而且会被 MCP 版本绑死；同时会绕过网关的鉴权、工具治理、租户隔离和审计。
 
 ---
 
-## 6. CAP v0.1（客户端接入协议）
+## 6. ACP v0.1（客户端接入协议）
 
 ### 6.1 信封
 
@@ -467,19 +471,19 @@ Client  <--- CAP（统一、稳定、版本化） --->  Gateway  <--- AAP（异�
 - 客户端注册时提供 `baseCallbackUrl` + 可选 `defaultCallbackPath`；
 - 工具可提供自己的 `callbackPath`，完整地址 = `baseCallbackUrl + (tool.callbackPath ?? defaultCallbackPath)`；
 - `chat`：`POST /v1/chat`，返回 JSON 或 SSE 流；
-- `tool_call`：网关 `POST {callbackUrl}`，请求体为 CAP 信封，客户端在 HTTP 响应体中返回 `tool_result`。
+- `tool_call`：网关 `POST {callbackUrl}`，请求体为 ACP 信封，客户端在 HTTP 响应体中返回 `tool_result`。
 
 #### WebSocket（NAT 客户端）
 
 - 连接：`wss://{gateway}/v1/ws?token={token}`；
-- 所有 CAP 消息通过 WS 文本帧双向传输；
+- 所有 ACP 消息通过 WS 文本帧双向传输；
 - 30s `ping`/`pong`；断线指数退避重连；
 - 重连后重新 `hello`，`register_tools` 可增量或全量。
 
 #### SSE + POST（NAT 客户端，WS 受限）
 
 - 下行：`GET /v1/events?token={token}`，`text/event-stream`；
-- 上行：`POST /v1/messages`，请求体为 CAP 信封；
+- 上行：`POST /v1/messages`，请求体为 ACP 信封；
 - SSE 事件 `id` 用于 `Last-Event-ID` 续传；
 - 工具结果通过 `POST /v1/messages` 回传。
 
@@ -588,11 +592,11 @@ sessionId 精确匹配 → (clientId, endUserId, deviceId) 唯一连接 → CLIE
 ### 7.2 CLI 适配器（当前 Qwen Code；Claude Code 需适配）
 
 - **对话**：`{command} -p <prompt> --output-format stream-json`，逐行解析 JSON 事件。
-- **流式**：`assistant` 文本映射为 CAP `delta`；`thinking` / `thinking_delta` / `reasoning_content` 映射为 CAP `thinking`，两者不混流。
+- **流式**：`assistant` 文本映射为 ACP `delta`；`thinking` / `thinking_delta` / `reasoning_content` 映射为 ACP `thinking`，两者不混流。
 - **工具**：网关对 CLI 暴露 MCP Server（`POST /mcp/{clientId}`），CLI 通过 `--mcp-config` 连接。
 - **会话**：`--resume <agentSessionRef>`；但**会话真相源在网关**，CLI 的 session 只是加速。
 - **系统提示**：`--append-system-prompt` 注入客户端提示词 + 语言指令 + 安全约束。
-- **能力**：子 agent、hooks、skills 等 CLI 私有能力不强行映射到 CAP；需要时作为 Agent 侧增强，不影响客户端协议。
+- **能力**：子 agent、hooks、skills 等 CLI 私有能力不强行映射到 ACP；需要时作为 Agent 侧增强，不影响客户端协议。
 
 ### 7.3 自研 Brain 适配器（HTTP）
 
@@ -681,7 +685,7 @@ sessionId 精确匹配 → (clientId, endUserId, deviceId) 唯一连接 → CLIE
 
 | 能力 | 现状 | 目标 | 差距 |
 |---|---|---|---|
-| CAP 统一信封 | 现有 REST/WS 各自定义 | 一套 `v/id/type/payload` | 需抽象消息层 |
+| ACP 统一信封 | 现有 REST/WS 各自定义 | 一套 `v/id/type/payload` | 需抽象消息层 |
 | 工具定义 | JSON Schema（`inputSchema`） | JSON Schema | 已统一，`parameters` 已移除 |
 | 身份 | `clientId` 自报 | token 解析 | 需认证层 |
 | 传输 | HTTP + WS | HTTP + WS + SSE | 需抽 `ClientTransport` |
@@ -705,7 +709,7 @@ sessionId 精确匹配 → (clientId, endUserId, deviceId) 唯一连接 → CLIE
 1. `ToolDefinition` 改为 JSON Schema；
 2. `ClientType` 从 `SERVER/MOBILE` 二值枚举，改为 `transports[]` 能力声明 + 默认传输；
 3. 新增 `ClientTransport` 抽象：`HttpCallbackTransport` / `WebSocketTransport` / `SseTransport`；
-4. 新增 CAP 消息层：统一信封、消息路由、错误码；
+4. 新增 ACP 消息层：统一信封、消息路由、错误码；
 5. 新增 token 认证与身份注入；
 6. 新增 `AgentEvent` 统一模型（当前是 `AgentResponse`）；
 7. 新增 CLI + YAML + Playground 的最小产品形态。
@@ -717,7 +721,7 @@ sessionId 精确匹配 → (clientId, endUserId, deviceId) 唯一连接 → CLIE
 | 阶段 | 目标 | 交付 |
 |---|---|---|
 | **P0（1–2 周）** | 证明协议与核心链路 | CLI + YAML + WS + Playground；self brain；3 个工具 |
-| **P1** | 打通双传输与 SDK | CAP v0.1；WS + HTTP callback；TS/Java SDK；最小控制台 |
+| **P1** | 打通双传输与 SDK | ACP v0.1；WS + HTTP callback；TS/Java SDK；最小控制台 |
 | **P2** | 身份与治理 | token；JSON Schema；工具授权；注册向导；OpenAPI 导入 |
 | **P3** | 多端与流式 | SSE；重连；`/mobile/chat`；Connector 雏形 |
 | **P4** | 企业化 | 私有化；SSO；配额；审计；CLI 沙箱 |
@@ -755,7 +759,8 @@ sessionId 精确匹配 → (clientId, endUserId, deviceId) 唯一连接 → CLIE
 
 | 术语 | 含义 |
 |---|---|
-| CAP | Client Access Protocol，客户端接入协议 |
+| ACP | Agent-Client Protocol（本项目定义），客户端与网关的统一交互协议 |
+| ACP v1 | Zed Industries 的 Agent Client Protocol 规范（JSON-RPC 2.0），本项目暂未兼容 |
 | AAP | Agent Adaptation Protocol，Agent 适配协议 |
 | AgentEvent | 网关内部统一 Agent 事件模型 |
 | Canonical Model | 网关内部通用模型 |
@@ -770,8 +775,8 @@ sessionId 精确匹配 → (clientId, endUserId, deviceId) 唯一连接 → CLIE
 
 - [2026-10-27-00-文档索引.md](../2026-10-27-00-文档索引.md)：文档分类、日期约定与索引
 - [2026-10-27-00-客户端快速接入.md](../user/2026-10-27-00-客户端快速接入.md)：外部客户端快速接入
-- [2026-10-27-00-客户端接入指南.md](../user/2026-10-27-00-客户端接入指南.md)：CAP 协议、工具回调、流式与排障
-- [2026-10-27-00-streaming-design.md](./2026-10-27-00-streaming-design.md)：Agent 文本流式输出（CAP SSE）设计
+- [2026-10-27-00-客户端接入指南.md](../user/2026-10-27-00-客户端接入指南.md)：ACP 协议、工具回调、流式与排障
+- [2026-10-27-00-streaming-design.md](./2026-10-27-00-streaming-design.md)：Agent 文本流式输出（ACP SSE）设计
 - [2026-10-27-00-AgentAdaptor核心思想.md](../user/2026-10-27-00-AgentAdaptor核心思想.md)：AgentAdaptor 核心思想（工具面 / 协议面）
 - [2026-10-26-23-agent-middleware-design.md](./2026-10-26-23-agent-middleware-design.md)：实现层设计与当前完成度评估
 - [2026-10-26-21-agent-tool-discovery-and-calling.md](./2026-10-26-21-agent-tool-discovery-and-calling.md)：Agent 如何发现并调用客户端工具
@@ -779,7 +784,7 @@ sessionId 精确匹配 → (clientId, endUserId, deviceId) 唯一连接 → CLIE
 
 ### 12.4 后续文档计划
 
-- `docs/protocol/cap.md`：CAP 完整消息与 JSON Schema 定义
+- `docs/protocol/acp.md`：ACP 完整消息与 JSON Schema 定义
 - `docs/protocol/aap.md`：AAP 适配器契约与 AgentEvent
 - `docs/protocol/transports.md`：HTTP / WS / SSE 绑定细节
 - `docs/product/cli-quickstart.md`：CLI + YAML 接入指南

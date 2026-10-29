@@ -1,6 +1,6 @@
 # 用 Qwen Code ACP 验证 AgentAdaptor：技术方案
 
-> 目标：不改客户端 CAP，先把 Gateway 作为 **ACP Client** 接到 Qwen Code 的 ACP 模式，验证“一个通用 ACP Client 接多个 ACP Agent”的可行性
+> 目标：不改客户端 ACP，先把 Gateway 作为 **ACP Client** 接到 Qwen Code 的 ACP 模式，验证“一个通用 ACP Client 接多个 ACP Agent”的可行性
 > 状态：**已实施（文本/流式通过；MCP 工具受 Qwen 0.26 ACP 限制）**
 > 相关：[ACP 对齐方案](./2026-10-27-13-acp-alignment-plan.md)、[Agent 生态讨论](./2026-10-27-13-agent-ecosystem-lessons.md)
 
@@ -42,7 +42,7 @@ qwen --acp
 本期只做 **ACP 出口**：
 
 ```text
-Client（CAP，不变）
+Client（ACP，不变）
    │ POST /chat
    ▼
 Gateway
@@ -56,7 +56,7 @@ Qwen Code（qwen --acp）
 
 不做：
 
-- 不把客户端 CAP 改成 ACP；
+- 不把客户端 ACP 改成 ACP；
 - 不做 ACP 入口（Client → Gateway 的 ACP 方法）；
 - 不做远程 ACP Agent 的 WS 传输；
 - 不做完整的权限/文件/终端代理（先验证主链路）。
@@ -280,8 +280,8 @@ Qwen 通过 `session/new.mcpServers` 连接 Gateway 的 MCP Server：
 
 ```text
 Qwen --MCP tools/call--> Gateway /mcp/{clientId}
-Gateway --CAP tool_call--> Client
-Client --CAP tool_result--> Gateway
+Gateway --ACP tool_call--> Client
+Client --ACP tool_result--> Gateway
 Gateway --MCP content--> Qwen
 ```
 
@@ -394,7 +394,7 @@ MCP 失败的证据：
 - 用 `tool_search` 搜索 `get_name` 也返回 `Not found: get_name`；
 - 试过 `--mcp-config`、`--allowed-mcp-server-names`、`alwaysLoadTools`，均未解决。
 
-结论：文本/流式 ACP 链路已验证；客户端工具链路受 Qwen 0.26 ACP 的 MCP 工具发现限制，属于 Agent 侧问题，不是 Gateway MCP 或 CAP 回调的问题。后续可升级 Qwen Code 或换一个 MCP 工具可见的 ACP Agent 验证；当前客户端工具仍可继续走 `cli` 适配器。
+结论：文本/流式 ACP 链路已验证；客户端工具链路受 Qwen 0.26 ACP 的 MCP 工具发现限制，属于 Agent 侧问题，不是 Gateway MCP 或 ACP 回调的问题。后续可升级 Qwen Code 或换一个 MCP 工具可见的 ACP Agent 验证；当前客户端工具仍可继续走 `cli` 适配器。
 
 ## 参考
 
